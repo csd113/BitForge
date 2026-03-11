@@ -119,7 +119,7 @@ impl BitForgeApp {
         confirm_tx: Sender<ConfirmRequest>,
     ) -> Self {
         let max_cores = std::thread::available_parallelism()
-            .map(|n| n.get())
+            .map(std::num::NonZero::get)
             .unwrap_or(1);
         let default_cores = max_cores.saturating_sub(1).max(1);
 
@@ -134,13 +134,14 @@ impl BitForgeApp {
             max_cores,
         );
 
-        let default_build_dir = home_dir()
-            .map(|h| {
+        let default_build_dir = home_dir().map_or_else(
+            || "/tmp/bitcoin_builds".to_owned(),
+            |h| {
                 h.join("Downloads/bitcoin_builds")
                     .to_string_lossy()
                     .into_owned()
-            })
-            .unwrap_or_else(|| "/tmp/bitcoin_builds".to_owned());
+            },
+        );
 
         let mut app = Self {
             target: "Bitcoin".to_owned(),
@@ -289,16 +290,15 @@ impl BitForgeApp {
     // ─── Background task spawners ─────────────────────────────────────────────
 
     fn spawn_check_deps(&mut self) {
-        let brew = match self.brew.clone() {
-            Some(b) => b,
-            None => {
-                self.modal = Some(Modal::Alert {
-                    title:    "Homebrew Not Found".into(),
-                    message:  "Homebrew is required.\nInstall it from https://brew.sh then restart BitForge.".into(),
-                    is_error: true,
-                });
-                return;
-            }
+        let Some(brew) = self.brew.clone() else {
+            self.modal = Some(Modal::Alert {
+                title: "Homebrew Not Found".into(),
+                message:
+                    "Homebrew is required.\nInstall it from https://brew.sh then restart BitForge."
+                        .into(),
+                is_error: true,
+            });
+            return;
         };
 
         let env = setup_build_environment(self.brew_pfx.as_deref());
@@ -591,6 +591,7 @@ impl BitForgeApp {
 
     // ─── Content renderer (called inside centred column) ──────────────────────
 
+    #[allow(clippy::too_many_lines)]
     fn render_content(&mut self, ui: &mut egui::Ui) {
         // Header
         ui.vertical_centered(|ui| {

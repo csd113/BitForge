@@ -81,8 +81,7 @@ pub async fn compile_bitcoin(
         &format!(
             "PKG_CONFIG_PATH = {}\n\n",
             env.get("PKG_CONFIG_PATH")
-                .map(|s| s.as_str())
-                .unwrap_or("(not set)")
+                .map_or("(not set)", String::as_str)
         ),
     );
 
@@ -193,19 +192,18 @@ pub async fn compile_electrs(
     let env = cargo_env(env);
 
     log_msg(tx, "\n🔍 Verifying Rust installation...\n");
-    match probe(&["cargo", "--version"], &env).await {
-        Some(v) => log_msg(tx, &format!("✓ Cargo: {v}\n")),
-        None => {
-            let msg = "❌ Cargo not found in PATH.\n\nPlease click 'Check & Install Dependencies', ensure Rust is installed, then restart.";
-            log_msg(tx, msg);
-            tx.send(AppMessage::ShowDialog {
-                title: "Rust Not Found".into(),
-                message: msg.into(),
-                is_error: true,
-            })
-            .ok();
-            return Err(anyhow::anyhow!("Cargo not found — cannot compile Electrs"));
-        }
+    if let Some(v) = probe(&["cargo", "--version"], &env).await {
+        log_msg(tx, &format!("✓ Cargo: {v}\n"));
+    } else {
+        let msg = "❌ Cargo not found in PATH.\n\nPlease click 'Check & Install Dependencies', ensure Rust is installed, then restart.";
+        log_msg(tx, msg);
+        tx.send(AppMessage::ShowDialog {
+            title: "Rust Not Found".into(),
+            message: msg.into(),
+            is_error: true,
+        })
+        .ok();
+        return Err(anyhow::anyhow!("Cargo not found — cannot compile Electrs"));
     }
 
     if let Some(v) = probe(&["rustc", "--version"], &env).await {
@@ -271,8 +269,8 @@ pub async fn compile_electrs(
 
 /// Environment for Bitcoin Core cmake builds.
 ///
-/// Critical differences from cargo_env:
-/// - PKG_CONFIG_PATH set → cmake finds Homebrew deps via pkg-config instantly.
+/// Critical differences from `cargo_env`:
+/// - `PKG_CONFIG_PATH` set → cmake finds Homebrew deps via pkg-config instantly.
 /// - TERM NOT set to "dumb" → cmake streams output in real time, not batched.
 fn bitcoin_env(base: &HashMap<String, String>) -> HashMap<String, String> {
     let mut env = base.clone();
@@ -288,7 +286,7 @@ fn bitcoin_env(base: &HashMap<String, String>) -> HashMap<String, String> {
         "/usr/local/share/pkgconfig",
     ];
 
-    let mut pcp: Vec<String> = homebrew_dirs.iter().map(|s| s.to_string()).collect();
+    let mut pcp: Vec<String> = homebrew_dirs.iter().map(ToString::to_string).collect();
     if let Some(existing) = env.get("PKG_CONFIG_PATH") {
         for part in existing.split(':').filter(|p| !p.is_empty()) {
             if !pcp.contains(&part.to_string()) {
@@ -328,9 +326,8 @@ fn cargo_env(base: &HashMap<String, String>) -> HashMap<String, String> {
 /// Returns an empty Vec if the directory doesn't exist or can't be read.
 async fn collect_executables(dir: &Path) -> Vec<PathBuf> {
     let mut result = Vec::new();
-    let mut rd = match tokio::fs::read_dir(dir).await {
-        Ok(rd) => rd,
-        Err(_) => return result,
+    let Ok(mut rd) = tokio::fs::read_dir(dir).await else {
+        return result;
     };
     while let Ok(Some(entry)) = rd.next_entry().await {
         let path = entry.path();
@@ -378,9 +375,8 @@ async fn copy_binaries(
             continue;
         }
 
-        let name = match binary.file_name() {
-            Some(n) => n,
-            None => continue,
+        let Some(name) = binary.file_name() else {
+            continue;
         };
 
         let dest = dest_dir.join(name);
@@ -455,10 +451,7 @@ async fn clone_or_update(
             .with_context(|| format!("Failed to remove {}", src_dir.display()))?;
     }
 
-    log_msg(
-        tx,
-        &format!("\n📥 Cloning {} at {}...\n", repo_url, version),
-    );
+    log_msg(tx, &format!("\n📥 Cloning {repo_url} at {version}...\n"));
     log_msg(
         tx,
         "   (shallow clone — may take a few minutes for Bitcoin Core)\n\n",

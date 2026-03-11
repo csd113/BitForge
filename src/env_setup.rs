@@ -31,7 +31,7 @@ pub fn brew_prefix(brew: &str) -> String {
 
 /// Build a complete process environment suitable for spawning compilation
 /// children.  Prepends Homebrew, Cargo, and LLVM paths to `PATH`, sets
-/// `LIBCLANG_PATH` / `DYLD_LIBRARY_PATH` for RocksDB bindgen, and inherits
+/// `LIBCLANG_PATH` / `DYLD_LIBRARY_PATH` for `RocksDB` bindgen, and inherits
 /// everything else from the parent process.
 #[must_use]
 pub fn setup_build_environment(brew_pfx: Option<&str>) -> HashMap<String, String> {
@@ -39,8 +39,7 @@ pub fn setup_build_environment(brew_pfx: Option<&str>) -> HashMap<String, String
 
     let home = env
         .get("HOME")
-        .map(|s| s.as_str())
-        .unwrap_or("/Users/user")
+        .map_or("/Users/user", String::as_str)
         .to_owned();
 
     // ── Build ordered PATH components ────────────────────────────────────────
@@ -138,6 +137,5 @@ pub fn macos_version() -> String {
         .ok()
         .filter(|o| o.status.success())
         .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_owned())
-        .unwrap_or_else(|| "unknown".to_owned())
+        .map_or_else(|| "unknown".to_owned(), |s| s.trim().to_owned())
 }

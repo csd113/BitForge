@@ -67,7 +67,9 @@ pub async fn check_dependencies_task(
     }
 
     // ── Offer to install missing packages ─────────────────────────────────────
-    if !missing.is_empty() {
+    if missing.is_empty() {
+        log_msg(&log_tx, "\n✓ All Homebrew packages are installed!\n");
+    } else {
         log_msg(
             &log_tx,
             &format!("\n⚠️  Missing Homebrew packages: {}\n", missing.join(", ")),
@@ -77,7 +79,7 @@ pub async fn check_dependencies_task(
         let preview = missing
             .iter()
             .take(5)
-            .cloned()
+            .copied()
             .collect::<Vec<_>>()
             .join(", ");
         let extra = if count > 5 {
@@ -120,8 +122,6 @@ pub async fn check_dependencies_task(
                 "\n⚠️  Dependencies not installed. Compilation may fail.\n",
             );
         }
-    } else {
-        log_msg(&log_tx, "\n✓ All Homebrew packages are installed!\n");
     }
 
     // ── Check Rust toolchain ──────────────────────────────────────────────────
@@ -164,21 +164,27 @@ async fn check_rust_installation(
 ) -> bool {
     log_msg(log_tx, "\n=== Checking Rust Toolchain ===\n");
 
-    let rustc_ok = if let Some(v) = probe(&["rustc", "--version"], env).await {
-        log_msg(log_tx, &format!("✓ rustc found: {v}\n"));
-        true
-    } else {
-        log_msg(log_tx, "❌ rustc not found in PATH\n");
-        false
-    };
+    let rustc_ok = probe(&["rustc", "--version"], env).await.map_or_else(
+        || {
+            log_msg(log_tx, "❌ rustc not found in PATH\n");
+            false
+        },
+        |v| {
+            log_msg(log_tx, &format!("✓ rustc found: {v}\n"));
+            true
+        },
+    );
 
-    let cargo_ok = if let Some(v) = probe(&["cargo", "--version"], env).await {
-        log_msg(log_tx, &format!("✓ cargo found: {v}\n"));
-        true
-    } else {
-        log_msg(log_tx, "❌ cargo not found in PATH\n");
-        false
-    };
+    let cargo_ok = probe(&["cargo", "--version"], env).await.map_or_else(
+        || {
+            log_msg(log_tx, "❌ cargo not found in PATH\n");
+            false
+        },
+        |v| {
+            log_msg(log_tx, &format!("✓ cargo found: {v}\n"));
+            true
+        },
+    );
 
     if rustc_ok && cargo_ok {
         return true;
@@ -212,48 +218,43 @@ async fn check_rust_installation(
 
     log_msg(log_tx, "📦 Installing rust from Homebrew...\n");
     let brew_cmd = format!("{brew:?} install rust");
-    match run_command(&brew_cmd, None, env, log_tx).await {
-        Err(e) => {
-            log_msg(log_tx, &format!("❌ Failed to install Rust: {e}\n"));
-            log_tx
-                .send(AppMessage::ShowDialog {
-                    title:    "Installation Error".into(),
-                    message:  format!("Failed to install Rust: {e}\n\nPlease install manually from https://rustup.rs"),
-                    is_error: true,
-                })
-                .ok();
-            return false;
-        }
-        Ok(()) => {
-            log_msg(log_tx, "\nVerifying Rust installation...\n");
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-        }
+    if let Err(e) = run_command(&brew_cmd, None, env, log_tx).await {
+        log_msg(log_tx, &format!("❌ Failed to install Rust: {e}\n"));
+        log_tx
+            .send(AppMessage::ShowDialog {
+                title: "Installation Error".into(),
+                message: format!(
+                    "Failed to install Rust: {e}\n\nPlease install manually from https://rustup.rs"
+                ),
+                is_error: true,
+            })
+            .ok();
+        return false;
     }
+    log_msg(log_tx, "\nVerifying Rust installation...\n");
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // Re-check after installation.
-    match (
+    if let (Some(r), Some(c)) = (
         probe(&["rustc", "--version"], env).await,
         probe(&["cargo", "--version"], env).await,
     ) {
-        (Some(r), Some(c)) => {
-            log_msg(log_tx, &format!("✓ rustc installed: {r}\n"));
-            log_msg(log_tx, &format!("✓ cargo installed: {c}\n"));
-            true
-        }
-        _ => {
-            log_msg(
-                log_tx,
-                "⚠️  Rust installed but binaries not yet in PATH. Restart the app.\n",
-            );
-            log_tx
-                .send(AppMessage::ShowDialog {
-                    title:    "Rust Installation".into(),
-                    message:  "Rust was installed but may not be in PATH.\n\nPlease:\n1. Close and reopen this app\n2. OR manually add ~/.cargo/bin to your PATH".into(),
-                    is_error: false,
-                })
-                .ok();
-            false
-        }
+        log_msg(log_tx, &format!("✓ rustc installed: {r}\n"));
+        log_msg(log_tx, &format!("✓ cargo installed: {c}\n"));
+        true
+    } else {
+        log_msg(
+            log_tx,
+            "⚠️  Rust installed but binaries not yet in PATH. Restart the app.\n",
+        );
+        log_tx
+            .send(AppMessage::ShowDialog {
+                title:    "Rust Installation".into(),
+                message:  "Rust was installed but may not be in PATH.\n\nPlease:\n1. Close and reopen this app\n2. OR manually add ~/.cargo/bin to your PATH".into(),
+                is_error: false,
+            })
+            .ok();
+        false
     }
 }
 

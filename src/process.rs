@@ -81,8 +81,7 @@ pub async fn run_command(
     if !status.success() {
         let code = status
             .code()
-            .map(|c| c.to_string())
-            .unwrap_or_else(|| "signal".to_owned());
+            .map_or_else(|| "signal".to_owned(), |c| c.to_string());
         bail!("Command failed (exit {code}): {cmd}");
     }
 
@@ -132,7 +131,7 @@ async fn drain_reader<R: AsyncReadExt + Unpin>(mut reader: R, tx: Sender<AppMess
 
 /// Normalize line endings: collapse Windows CRLF (\r\n) → \n, and strip
 /// ANSI escape sequences. Bare \r (carriage return without \n) is passed
-/// through unchanged so that append_log can apply true terminal semantics
+/// through unchanged so that `append_log` can apply true terminal semantics
 /// (overwrite the current line), keeping cmake/make progress readable
 /// instead of generating hundreds of stacked duplicate lines.
 fn sanitise_cr(s: &str) -> String {
