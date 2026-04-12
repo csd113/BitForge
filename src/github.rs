@@ -15,7 +15,7 @@ const MAX_VERSIONS: usize = 10;
 
 // ─── Shared HTTP client ───────────────────────────────────────────────────────
 
-static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+static HTTP_CLIENT: LazyLock<Result<reqwest::Client, String>> = LazyLock::new(|| {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .user_agent(concat!(
@@ -24,7 +24,7 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
             env!("CARGO_PKG_VERSION")
         ))
         .build()
-        .expect("Failed to build shared reqwest client")
+        .map_err(|e| e.to_string())
 });
 
 // ─── GitHub API response shape ────────────────────────────────────────────────
@@ -51,7 +51,7 @@ pub async fn fetch_electrs_versions() -> Result<Vec<String>> {
 // ─── Shared implementation ────────────────────────────────────────────────────
 
 async fn fetch_versions(url: &str, project: &str) -> Result<Vec<String>> {
-    let releases: Vec<GitHubRelease> = HTTP_CLIENT
+    let releases: Vec<GitHubRelease> = http_client()?
         .get(url)
         .send()
         .await
@@ -89,4 +89,13 @@ fn parse_semver(tag: &str) -> (u32, u32, u32) {
     let minor = parts.next().unwrap_or(0);
     let patch = parts.next().unwrap_or(0);
     (major, minor, patch)
+}
+
+fn http_client() -> Result<&'static reqwest::Client> {
+    match &*HTTP_CLIENT {
+        Ok(client) => Ok(client),
+        Err(err) => Err(anyhow::anyhow!(
+            "Failed to build shared reqwest client: {err}"
+        )),
+    }
 }

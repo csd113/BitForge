@@ -67,9 +67,7 @@ pub async fn check_dependencies_task(
     }
 
     // ── Offer to install missing packages ─────────────────────────────────────
-    if missing.is_empty() {
-        log_msg(&log_tx, "\n✓ All Homebrew packages are installed!\n");
-    } else {
+    if !missing.is_empty() {
         log_msg(
             &log_tx,
             &format!("\n⚠️  Missing Homebrew packages: {}\n", missing.join(", ")),
@@ -97,13 +95,35 @@ pub async fn check_dependencies_task(
             ask_confirm(&confirm_tx, "Install Missing Dependencies", &message).await;
 
         if should_install {
+            let mut still_missing = Vec::new();
             for pkg in &missing {
                 log_msg(&log_tx, &format!("\n📦 Installing {pkg}...\n"));
                 // Pass brew path and pkg as separate shell words; neither
                 // should contain spaces but quoting makes it explicit.
                 let cmd = format!("{brew:?} install {pkg}");
                 match run_command(&cmd, None, &env, &log_tx).await {
-                    Ok(()) => log_msg(&log_tx, &format!("✓ {pkg} installed successfully\n")),
+                    Ok(()) => {
+                        let installed = tokio::process::Command::new(&brew)
+                            .args(["list", pkg])
+                            .env_clear()
+                            .envs(&env)
+                            .output()
+                            .await
+                            .map(|o| o.status.success())
+                            .unwrap_or(false);
+
+                        if installed {
+                            log_msg(&log_tx, &format!("✓ {pkg} installed successfully\n"));
+                        } else {
+                            log_msg(
+                                &log_tx,
+                                &format!(
+                                    "❌ {pkg} install finished but the package is still missing\n"
+                                ),
+                            );
+                            still_missing.push(*pkg);
+                        }
+                    }
                     Err(e) => {
                         log_msg(&log_tx, &format!("❌ Failed to install {pkg}: {e}\n"));
                         log_tx
@@ -113,9 +133,12 @@ pub async fn check_dependencies_task(
                                 is_error: true,
                             })
                             .ok();
+                        still_missing.push(*pkg);
                     }
                 }
             }
+
+            missing = still_missing;
         } else {
             log_msg(
                 &log_tx,
@@ -123,6 +146,29 @@ pub async fn check_dependencies_task(
             );
         }
     }
+
+    if !missing.is_empty() {
+        log_msg(
+            &log_tx,
+            &format!(
+                "\n❌ Dependency check incomplete. Still missing: {}\n",
+                missing.join(", ")
+            ),
+        );
+        log_tx
+            .send(AppMessage::ShowDialog {
+                title: "Dependency Check".into(),
+                message: format!(
+                    "Some required Homebrew packages are still missing:\n\n{}\n\nInstall them and run the check again.",
+                    missing.join(", ")
+                ),
+                is_error: true,
+            })
+            .ok();
+        return Ok(false);
+    }
+
+    log_msg(&log_tx, "\n✓ All Homebrew packages are installed!\n");
 
     // ── Check Rust toolchain ──────────────────────────────────────────────────
     let rust_ok = check_rust_installation(&brew, &env, &log_tx).await;

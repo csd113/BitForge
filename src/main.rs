@@ -10,10 +10,25 @@ mod process;
 
 use std::sync::Arc;
 
+use anyhow::Result;
 use app::BitForgeApp;
 use env_setup::{brew_prefix, find_brew, setup_build_environment};
 
-fn main() -> eframe::Result<()> {
+fn main() {
+    if let Err(err) = run() {
+        let message = format!("BitForge failed to start:\n\n{err}");
+        let _ = rfd::MessageDialog::new()
+            .set_title("BitForge Startup Failed")
+            .set_description(&message)
+            .set_buttons(rfd::MessageButtons::Ok)
+            .set_level(rfd::MessageLevel::Error)
+            .show();
+        eprintln!("{message}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     // ── 0. Widen PATH for child processes ─────────────────────────────────────
     // SAFETY: single-threaded at this point.
     {
@@ -35,7 +50,7 @@ fn main() -> eframe::Result<()> {
             .enable_all()
             .worker_threads(worker_threads)
             .build()
-            .expect("Failed to create tokio runtime"),
+            .map_err(|e| anyhow::anyhow!("Failed to create tokio runtime: {e}"))?,
     );
 
     // ── 2. Channels ───────────────────────────────────────────────────────────
@@ -101,5 +116,7 @@ fn main() -> eframe::Result<()> {
                 cc, runtime, msg_rx, msg_tx, confirm_rx, confirm_tx,
             )))
         }),
-    )
+    )?;
+
+    Ok(())
 }

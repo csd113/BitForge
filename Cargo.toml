@@ -1,6 +1,6 @@
 [package]
 name = "bitcoin-compiler"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Bitcoin Compiler App"]
 description = "Compile Bitcoin Core and Electrs from source on macOS"
@@ -49,7 +49,7 @@ rfd = "0.14"
 name           = "Bitcoin Compiler"
 identifier     = "com.bitcoincompiler.app"
 icon           = []
-version        = "0.1.0"
+version        = "0.1.1"
 copyright      = "Copyright 2024"
 category       = "developer-tool"
 short_description = "Compile Bitcoin Core and Electrs from source on macOS"

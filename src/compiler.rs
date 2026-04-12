@@ -385,7 +385,11 @@ async fn copy_binaries(
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755));
+                    tokio::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
+                        .await
+                        .with_context(|| {
+                            format!("Failed to set executable permissions on {}", dest.display())
+                        })?;
                 }
                 log_msg(tx, &format!("  ✓ {}\n", name.to_string_lossy()));
                 copied.push(dest);
