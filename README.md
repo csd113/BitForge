@@ -75,7 +75,7 @@ Binaries produced by BitForge drop straight into **BitEngine** for node manageme
 ## Features
 
 ### Dependency checker
-Scans for all required Homebrew packages (`cmake`, `llvm`, `boost`, `rocksdb`, `rust`, and more). Missing packages are listed with a Yes/No confirmation dialog before anything is installed. The Rust toolchain is verified separately and installed via Homebrew if absent.
+Scans for all required Homebrew packages (`cmake`, `llvm`, `boost`, `rocksdb`, and more). Missing packages are listed with a Yes/No confirmation dialog before anything is installed. The Rust toolchain is verified separately and supports standard manual installs such as `rustup`; BitForge falls back to Homebrew only if Rust is absent.
 
 ### Live version selection
 Pulls the latest stable release tags directly from the GitHub Releases API on startup. Pre-releases and release candidates (`rc`) are filtered out automatically. Hit **Refresh** at any time to re-fetch.

@@ -8,6 +8,7 @@ mod github;
 mod messages;
 mod process;
 
+use std::io::Write as _;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -23,21 +24,19 @@ fn main() {
             .set_buttons(rfd::MessageButtons::Ok)
             .set_level(rfd::MessageLevel::Error)
             .show();
-        eprintln!("{message}");
+        let mut stderr = std::io::stderr().lock();
+        let _ = writeln!(stderr, "{message}");
         std::process::exit(1);
     }
 }
 
 fn run() -> Result<()> {
     // ── 0. Widen PATH for child processes ─────────────────────────────────────
-    // SAFETY: single-threaded at this point.
-    {
-        let brew = find_brew();
-        let pfx = brew.as_deref().map(brew_prefix);
-        let env = setup_build_environment(pfx.as_deref());
-        if let Some(path) = env.get("PATH") {
-            std::env::set_var("PATH", path);
-        }
+    let brew = find_brew();
+    let pfx = brew.as_deref().map(brew_prefix);
+    let env = setup_build_environment(pfx.as_deref());
+    if let Some(path) = env.get("PATH") {
+        std::env::set_var("PATH", path);
     }
 
     // ── 1. Tokio runtime ──────────────────────────────────────────────────────

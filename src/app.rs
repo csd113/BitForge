@@ -591,9 +591,23 @@ impl BitForgeApp {
 
     // ─── Content renderer (called inside centred column) ──────────────────────
 
-    #[allow(clippy::too_many_lines)]
     fn render_content(&mut self, ui: &mut egui::Ui) {
-        // Header
+        Self::render_header(ui);
+        ui.add_space(20.0);
+        self.render_dependency_section(ui);
+        ui.add_space(10.0);
+        self.render_build_settings_section(ui);
+        ui.add_space(10.0);
+        self.render_version_section(ui);
+        ui.add_space(10.0);
+        self.render_progress_section(ui);
+        ui.add_space(10.0);
+        self.render_log_section(ui);
+        ui.add_space(18.0);
+        self.render_compile_button(ui);
+    }
+
+    fn render_header(ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
             ui.label(
                 egui::RichText::new("⚙  BitForge")
@@ -608,10 +622,9 @@ impl BitForgeApp {
                     .color(pal::LABEL_MUTED),
             );
         });
+    }
 
-        ui.add_space(20.0);
-
-        // ── Step 1 ────────────────────────────────────────────────────────────
+    fn render_dependency_section(&mut self, ui: &mut egui::Ui) {
         section_card(ui, "Step 1 — Check & Install Dependencies", |ui| {
             ui.horizontal(|ui| {
                 ui.label(
@@ -631,16 +644,14 @@ impl BitForgeApp {
                 });
             });
         });
+    }
 
-        ui.add_space(10.0);
-
-        // ── Step 2 ────────────────────────────────────────────────────────────
+    fn render_build_settings_section(&mut self, ui: &mut egui::Ui) {
         section_card(ui, "Step 2 — Configure Build", |ui| {
             egui::Grid::new("settings_grid")
                 .num_columns(4)
                 .spacing([14.0, 10.0])
                 .show(ui, |ui| {
-                    // Row 1: Target + Cores
                     ui.label(egui::RichText::new("Target").color(pal::LABEL_MUTED));
                     egui::ComboBox::from_id_source("target_combo")
                         .selected_text(&self.target)
@@ -666,14 +677,13 @@ impl BitForgeApp {
                     });
                     ui.end_row();
 
-                    // Row 2: Build directory
                     ui.label(egui::RichText::new("Output Dir").color(pal::LABEL_MUTED));
                     ui.add(
                         egui::TextEdit::singleline(&mut self.build_dir)
                             .desired_width(440.0)
                             .font(egui::TextStyle::Monospace),
                     );
-                    ui.label(""); // spacer
+                    ui.label("");
                     if ui.button("Browse…").clicked() {
                         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
                             self.build_dir = folder.to_string_lossy().into_owned();
@@ -682,10 +692,9 @@ impl BitForgeApp {
                     ui.end_row();
                 });
         });
+    }
 
-        ui.add_space(10.0);
-
-        // ── Step 3 ────────────────────────────────────────────────────────────
+    fn render_version_section(&mut self, ui: &mut egui::Ui) {
         section_card(ui, "Step 3 — Select Versions", |ui| {
             egui::Grid::new("versions_grid")
                 .num_columns(4)
@@ -730,10 +739,9 @@ impl BitForgeApp {
                     ui.end_row();
                 });
         });
+    }
 
-        ui.add_space(10.0);
-
-        // ── Progress ──────────────────────────────────────────────────────────
+    fn render_progress_section(&self, ui: &mut egui::Ui) {
         section_card(ui, "Build Progress", |ui| {
             let label = if self.is_busy {
                 format!("{:.0}%", self.progress * 100.0)
@@ -754,10 +762,9 @@ impl BitForgeApp {
                 ui.label(egui::RichText::new(label).small().color(pal::LABEL_MUTED));
             });
         });
+    }
 
-        ui.add_space(10.0);
-
-        // ── Build log terminal — FIXED HEIGHT, never resizes ──────────────────
+    fn render_log_section(&self, ui: &mut egui::Ui) {
         ui.label(
             egui::RichText::new("Build Log")
                 .strong()
@@ -774,8 +781,6 @@ impl BitForgeApp {
             ..Default::default()
         }
         .show(ui, |ui| {
-            // Hard-pin both min and max to the same value so egui never
-            // allocates more or less space as log content grows.
             ui.set_min_height(TERMINAL_HEIGHT);
             ui.set_max_height(TERMINAL_HEIGHT);
 
@@ -795,10 +800,9 @@ impl BitForgeApp {
                     );
                 });
         });
+    }
 
-        ui.add_space(18.0);
-
-        // ── Compile button ────────────────────────────────────────────────────
+    fn render_compile_button(&mut self, ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
             let label = if self.is_busy {
                 "⏳  Compiling…"

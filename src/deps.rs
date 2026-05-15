@@ -3,6 +3,7 @@
 // Background task: check and optionally install all build dependencies.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 
 use anyhow::Result;
@@ -25,7 +26,6 @@ const BREW_PACKAGES: &[&str] = &[
     "llvm",
     "libevent",
     "rocksdb",
-    "rust",
     "git",
 ];
 
@@ -55,8 +55,7 @@ pub async fn check_dependencies_task(
             .envs(&env)
             .output()
             .await
-            .map(|o| o.status.success())
-            .unwrap_or(false);
+            .is_ok_and(|o| o.status.success());
 
         if ok {
             log_msg(&log_tx, &format!("  ✓ {pkg}\n"));
@@ -109,8 +108,7 @@ pub async fn check_dependencies_task(
                             .envs(&env)
                             .output()
                             .await
-                            .map(|o| o.status.success())
-                            .unwrap_or(false);
+                            .is_ok_and(|o| o.status.success());
 
                         if installed {
                             log_msg(&log_tx, &format!("✓ {pkg} installed successfully\n"));
@@ -210,9 +208,12 @@ async fn check_rust_installation(
 ) -> bool {
     log_msg(log_tx, "\n=== Checking Rust Toolchain ===\n");
 
-    let rustc_ok = probe(&["rustc", "--version"], env).await.map_or_else(
+    let rustc_ok = probe_rust_tool("rustc", env).await.map_or_else(
         || {
-            log_msg(log_tx, "❌ rustc not found in PATH\n");
+            log_msg(
+                log_tx,
+                "❌ rustc not found in PATH or standard Cargo locations\n",
+            );
             false
         },
         |v| {
@@ -221,9 +222,12 @@ async fn check_rust_installation(
         },
     );
 
-    let cargo_ok = probe(&["cargo", "--version"], env).await.map_or_else(
+    let cargo_ok = probe_rust_tool("cargo", env).await.map_or_else(
         || {
-            log_msg(log_tx, "❌ cargo not found in PATH\n");
+            log_msg(
+                log_tx,
+                "❌ cargo not found in PATH or standard Cargo locations\n",
+            );
             false
         },
         |v| {
@@ -247,8 +251,7 @@ async fn check_rust_installation(
         .envs(env)
         .output()
         .await
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+        .is_ok_and(|o| o.status.success());
 
     if !brew_knows_rust {
         log_msg(log_tx, "❌ Rust formula not found in Homebrew\n");
@@ -282,8 +285,8 @@ async fn check_rust_installation(
 
     // Re-check after installation.
     if let (Some(r), Some(c)) = (
-        probe(&["rustc", "--version"], env).await,
-        probe(&["cargo", "--version"], env).await,
+        probe_rust_tool("rustc", env).await,
+        probe_rust_tool("cargo", env).await,
     ) {
         log_msg(log_tx, &format!("✓ rustc installed: {r}\n"));
         log_msg(log_tx, &format!("✓ cargo installed: {c}\n"));
@@ -304,6 +307,62 @@ async fn check_rust_installation(
     }
 }
 
+async fn probe_rust_tool(tool: &str, env: &HashMap<String, String>) -> Option<String> {
+    if let Some(version) = probe(&[tool, "--version"], env).await {
+        return Some(version);
+    }
+
+    for candidate in rust_tool_candidates(tool, env)
+        .into_iter()
+        .filter(|candidate| candidate.is_file())
+    {
+        let Ok(output) = tokio::process::Command::new(&candidate)
+            .arg("--version")
+            .env_clear()
+            .envs(env)
+            .output()
+            .await
+        else {
+            continue;
+        };
+
+        if output.status.success() {
+            return String::from_utf8(output.stdout)
+                .ok()
+                .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty());
+        }
+    }
+
+    None
+}
+
+fn rust_tool_candidates(tool: &str, env: &HashMap<String, String>) -> Vec<PathBuf> {
+    let mut candidates = Vec::with_capacity(2);
+
+    if let Some(cargo_home) = env.get("CARGO_HOME") {
+        push_tool_candidate(
+            &mut candidates,
+            Path::new(cargo_home).join("bin").join(tool),
+        );
+    }
+
+    if let Some(home) = env.get("HOME") {
+        push_tool_candidate(
+            &mut candidates,
+            Path::new(home).join(".cargo").join("bin").join(tool),
+        );
+    }
+
+    candidates
+}
+
+fn push_tool_candidate(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if !candidates.iter().any(|existing| existing == &candidate) {
+        candidates.push(candidate);
+    }
+}
+
 // ─── Confirmation helper ──────────────────────────────────────────────────────
 
 /// Send a `ConfirmRequest` to the UI, then suspend until the UI replies.
@@ -316,4 +375,31 @@ async fn ask_confirm(tx: &Sender<ConfirmRequest>, title: &str, message: &str) ->
     })
     .ok();
     response_rx.await.unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rust_tool_candidates;
+    use std::collections::HashMap;
+
+    #[test]
+    fn rust_tool_candidates_include_cargo_home_and_home() {
+        let mut env = HashMap::new();
+        env.insert("CARGO_HOME".to_owned(), "/tmp/cargo-home".to_owned());
+        env.insert("HOME".to_owned(), "/tmp/home".to_owned());
+
+        let candidates = rust_tool_candidates("cargo", &env);
+        let candidate_strings: Vec<String> = candidates
+            .into_iter()
+            .map(|path| path.display().to_string())
+            .collect();
+
+        assert_eq!(
+            candidate_strings,
+            vec![
+                "/tmp/cargo-home/bin/cargo".to_owned(),
+                "/tmp/home/.cargo/bin/cargo".to_owned(),
+            ]
+        );
+    }
 }

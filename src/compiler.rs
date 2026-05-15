@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 
 use crate::messages::{log_msg, AppMessage};
 use crate::process::{probe, run_command};
@@ -289,8 +289,9 @@ fn bitcoin_env(base: &HashMap<String, String>) -> HashMap<String, String> {
     let mut pcp: Vec<String> = homebrew_dirs.iter().map(ToString::to_string).collect();
     if let Some(existing) = env.get("PKG_CONFIG_PATH") {
         for part in existing.split(':').filter(|p| !p.is_empty()) {
-            if !pcp.contains(&part.to_string()) {
-                pcp.push(part.to_string());
+            let part = part.to_owned();
+            if !pcp.contains(&part) {
+                pcp.push(part);
             }
         }
     }
@@ -335,7 +336,7 @@ async fn collect_executables(dir: &Path) -> Vec<PathBuf> {
             // On Unix, check the executable bit.
             #[cfg(unix)]
             {
-                use std::os::unix::fs::PermissionsExt;
+                use std::os::unix::fs::PermissionsExt as _;
                 if let Ok(meta) = std::fs::metadata(&path) {
                     if meta.permissions().mode() & 0o111 != 0 {
                         result.push(path);
@@ -384,7 +385,7 @@ async fn copy_binaries(
             Ok(_) => {
                 #[cfg(unix)]
                 {
-                    use std::os::unix::fs::PermissionsExt;
+                    use std::os::unix::fs::PermissionsExt as _;
                     tokio::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
                         .await
                         .with_context(|| {

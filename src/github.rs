@@ -5,7 +5,7 @@
 // index 0 is always the most recent stable release, regardless of the
 // order GitHub returns them in.
 
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 use serde::Deserialize;
 use std::sync::LazyLock;
 
