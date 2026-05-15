@@ -1,12 +1,12 @@
 [package]
-name = "bitcoin-compiler"
-version = "0.1.1"
+name = "bitforge"
+version = "0.1.2"
 edition = "2021"
-authors = ["Bitcoin Compiler App"]
+authors = ["BitForge App"]
 description = "Compile Bitcoin Core and Electrs from source on macOS"
 
 [[bin]]
-name = "bitcoin-compiler"
+name = "bitforge"
 path = "src/main.rs"
 
 [dependencies]
@@ -46,10 +46,10 @@ rfd = "0.14"
 
 # ── macOS bundle metadata ──────────────────────────────────────────────────────
 [package.metadata.bundle]
-name           = "Bitcoin Compiler"
-identifier     = "com.bitcoincompiler.app"
+name           = "BitForge"
+identifier     = "com.bitforge.app"
 icon           = []
-version        = "0.1.1"
+version        = "0.1.2"
 copyright      = "Copyright 2024"
 category       = "developer-tool"
 short_description = "Compile Bitcoin Core and Electrs from source on macOS"

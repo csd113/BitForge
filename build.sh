@@ -18,8 +18,8 @@ set -euo pipefail
 
 # ── Configurable identifiers ──────────────────────────────────────────────────
 APP_NAME="BitForge"
-BINARY_NAME="bitcoin-compiler"          # must match [[bin]] name in Cargo.toml
-BUNDLE_ID="com.bitcoincompiler.app"
+BINARY_NAME="bitforge"                  # must match [[bin]] name in Cargo.toml
+BUNDLE_ID="com.bitforge.app"
 VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
 MINIMUM_MACOS="12.0"
 
@@ -108,11 +108,11 @@ cp "$BUILT_BINARY" "$MACOS_DIR/${APP_NAME}"
 chmod 755 "$MACOS_DIR/${APP_NAME}"
 
 # Copy icon if it exists (icns format expected)
-if [[ -f "assets/${APP_NAME}.icns" ]]; then
-    cp "assets/${APP_NAME}.icns" "$RESOURCES_DIR/${APP_NAME}.icns"
-    ICON_FILE_LINE="<key>CFBundleIconFile</key><string>${APP_NAME}</string>"
+if [[ -f "app-icon.icns" ]]; then
+    cp "app-icon.icns" "$RESOURCES_DIR/app-icon.icns"
+    ICON_FILE_LINE="<key>CFBundleIconFile</key><string>app-icon</string>"
 else
-    warn "No icon found at assets/${APP_NAME}.icns — bundle will use default icon"
+    warn "No icon found at app-icon.icns — bundle will use default icon"
     ICON_FILE_LINE=""
 fi
 
@@ -165,7 +165,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
     <string>public.app-category.developer-tools</string>
 
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2024 Bitcoin Compiler App. MIT License.</string>
+    <string>Copyright © 2024 BitForge App. MIT License.</string>
 
     ${ICON_FILE_LINE}
 </dict>

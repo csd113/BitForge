@@ -141,7 +141,7 @@ brew install cmake llvm boost miniupnpc zeromq sqlite libevent rocksdb \
 
 ```bash
 cargo build
-./target/debug/bitcoin-compiler
+./target/debug/bitforge
 ```
 
 ### Release build (optimised, stripped)
@@ -172,8 +172,8 @@ cargo build --release --target aarch64-apple-darwin
 cargo build --release --target x86_64-apple-darwin
 
 lipo -create \
-  target/aarch64-apple-darwin/release/bitcoin-compiler \
-  target/x86_64-apple-darwin/release/bitcoin-compiler \
+  target/aarch64-apple-darwin/release/bitforge \
+  target/x86_64-apple-darwin/release/bitforge \
   -output dist/BitForge.app/Contents/MacOS/BitForge
 
 codesign --force --deep --sign "-" dist/BitForge.app

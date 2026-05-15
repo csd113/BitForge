@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.2 - 2026-05-15
+
+- Renamed the app and build outputs to BitForge across the project.
+- Bumped the application and bundle version to 0.1.2.
+
 ## v0.1.1 - 2026-04-11
 
 - Fixed dependency checks so the app only reports success when every required Homebrew package is actually installed.

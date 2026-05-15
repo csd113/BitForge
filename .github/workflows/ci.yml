@@ -23,3 +23,21 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package macOS app bundle
+        env:
+          BINARY_PATH: ${{ github.workspace }}/target/release/bitforge
+          OUTPUT_DIR: ${{ runner.temp }}/bitforge-ci
+        run: ./scripts/package_macos_app.sh
+
+      - name: Verify macOS app bundle
+        run: |
+          APP_DIR="${RUNNER_TEMP}/bitforge-ci/BitForge.app"
+          test -f "$APP_DIR/Contents/Info.plist"
+          test -x "$APP_DIR/Contents/MacOS/BitForge"
+          test -f "$APP_DIR/Contents/Resources/app-icon.icns"
+          plutil -lint "$APP_DIR/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP_DIR/Contents/Info.plist")" = "app-icon"
