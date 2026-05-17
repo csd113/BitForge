@@ -9,14 +9,26 @@ on:
 permissions:
   contents: write
 
+env:
+  NODE_VERSION: 26.1.0
+
 jobs:
   macos-arm64:
     name: macOS Apple Silicon
     runs-on: macos-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Verify Node
+        run: node --version
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -59,11 +71,12 @@ jobs:
   linux:
     name: Linux ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             arch: x64
             archive: BitForge-linux-x64.tar.gz
@@ -75,6 +88,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Verify Node
+        run: node --version
 
       - name: Install Linux build dependencies
         run: |
@@ -141,12 +162,21 @@ jobs:
 
   verify-release-scope:
     name: Verify release scope
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     needs:
       - macos-arm64
       - linux
 
     steps:
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Verify Node
+        run: node --version
+
       - name: Download uploaded artifacts
         uses: actions/download-artifact@v8
         with:

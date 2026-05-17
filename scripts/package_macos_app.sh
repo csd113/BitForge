@@ -28,7 +28,7 @@ fi
 [[ -f "$BINARY_PATH" ]] || err "Binary not found: $BINARY_PATH"
 [[ -f "$ICON_PATH" ]] || err "Icon not found: $ICON_PATH"
 if [[ -z "$EXECUTABLE_NAME" ]]; then
-    EXECUTABLE_NAME="$(basename "$BINARY_PATH")"
+    EXECUTABLE_NAME="$APP_NAME"
 fi
 
 APP_DIR="$OUTPUT_DIR/${APP_NAME}.app"
