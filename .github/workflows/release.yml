@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -44,7 +44,7 @@ jobs:
           unzip -l "${RUNNER_TEMP}/bitforge-release/BitForge-macos-arm64.zip" | grep "BitForge.app/Contents/MacOS/BitForge"
 
       - name: Upload CI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: BitForge-macos-arm64
           path: ${{ runner.temp }}/bitforge-release/BitForge-macos-arm64.zip
@@ -52,7 +52,7 @@ jobs:
 
       - name: Upload release asset
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ runner.temp }}/bitforge-release/BitForge-macos-arm64.zip
 
@@ -74,7 +74,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Linux build dependencies
         run: |
@@ -127,7 +127,7 @@ jobs:
           tar -tzf "${RUNNER_TEMP}/bitforge-release/${{ matrix.archive }}" | grep "BitForge/bitforge"
 
       - name: Upload CI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: BitForge-linux-${{ matrix.arch }}
           path: ${{ runner.temp }}/bitforge-release/${{ matrix.archive }}
@@ -135,7 +135,7 @@ jobs:
 
       - name: Upload release asset
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ runner.temp }}/bitforge-release/${{ matrix.archive }}
 
@@ -148,7 +148,7 @@ jobs:
 
     steps:
       - name: Download uploaded artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 

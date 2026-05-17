@@ -6,7 +6,7 @@
 
 Built with Rust · egui · wgpu · Apple Silicon and Linux native
 
-[![Rust](https://img.shields.io/badge/rust-1.80%2B-orange?logo=rust)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.92%2B-orange?logo=rust)](https://www.rust-lang.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon%20%7C%20Linux-blue)](#supported-platforms)
 [![Architecture](https://img.shields.io/badge/arch-arm64%20%7C%20x86__64-lightgrey)](#supported-platforms)
 [![License](https://img.shields.io/badge/license-MIT-green)](#license)
@@ -143,7 +143,7 @@ rustup target add aarch64-apple-darwin
 brew install cmake llvm boost libevent rocksdb automake libtool pkg-config git rust
 ```
 
-> **Requires:** Rust 1.80+, macOS 12 Monterey or later, Xcode Command Line Tools (`xcode-select --install`)
+> **Requires:** Rust 1.92+, macOS 12 Monterey or later, Xcode Command Line Tools (`xcode-select --install`)
 
 #### Linux
 
@@ -303,12 +303,12 @@ The egui render loop never blocks. All process I/O runs on the tokio runtime. Co
 
 | Crate | Version | Purpose |
 |---|---|---|
-| `eframe` / `egui` | 0.28 | GUI framework (wgpu, immediate-mode) |
+| `eframe` / `egui` | 0.34 | GUI framework (wgpu, immediate-mode) |
 | `tokio` | 1 | Async runtime (rt-multi-thread, process, io-util, sync, time) |
-| `reqwest` | 0.12 | HTTP client for GitHub API (rustls, no OpenSSL) |
+| `reqwest` | 0.13 | HTTP client for GitHub API (rustls, no OpenSSL) |
 | `serde` | 1 | JSON deserialisation of GitHub API responses |
 | `anyhow` | 1 | Ergonomic error propagation throughout |
-| `rfd` | 0.14 | Native folder picker on macOS and XDG portal on Linux |
+| `rfd` | 0.17 | Native folder picker on macOS and XDG portal on Linux |
 
 ---
 
