@@ -13,7 +13,16 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use app::BitForgeApp;
-use env_setup::{brew_prefix, find_brew, setup_build_environment};
+use env_setup::{brew_prefix, find_brew, is_supported_platform, setup_build_environment};
+
+#[cfg(not(any(
+    all(target_os = "macos", target_arch = "aarch64"),
+    all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )
+)))]
+compile_error!("BitForge supports macOS Apple Silicon, Linux x86_64, and Linux ARM64 only.");
 
 fn main() {
     if let Err(err) = run() {
@@ -31,6 +40,15 @@ fn main() {
 }
 
 fn run() -> Result<()> {
+    if !is_supported_platform() {
+        return Err(anyhow::anyhow!(
+            "{}\nCurrent platform: {} {}",
+            env_setup::supported_platforms_message(),
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ));
+    }
+
     // ── 0. Widen PATH for child processes ─────────────────────────────────────
     let brew = find_brew();
     let pfx = brew.as_deref().map(brew_prefix);
@@ -40,9 +58,7 @@ fn run() -> Result<()> {
     }
 
     // ── 1. Tokio runtime ──────────────────────────────────────────────────────
-    let worker_threads = std::thread::available_parallelism()
-        .map(|n| n.get().min(8))
-        .unwrap_or(4);
+    let worker_threads = std::thread::available_parallelism().map_or(4, |n| n.get().min(8));
 
     let runtime = Arc::new(
         tokio::runtime::Builder::new_multi_thread()

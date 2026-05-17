@@ -3,18 +3,24 @@ name = "bitforge"
 version = "0.1.2"
 edition = "2021"
 authors = ["BitForge App"]
-description = "Compile Bitcoin Core and Electrs from source on macOS"
+description = "Compile Bitcoin Core and Electrs from source on macOS Apple Silicon and Linux"
+license = "MIT"
+repository = "https://github.com/csd113/BitForge"
+keywords = ["bitcoin", "electrs", "compiler", "gui"]
+categories = ["development-tools"]
 
 [[bin]]
 name = "bitforge"
 path = "src/main.rs"
 
 [dependencies]
-# GUI framework — eframe/egui immediate-mode GUI with Metal on macOS.
+# GUI framework — eframe/egui immediate-mode GUI with wgpu.
 eframe = { version = "0.28", default-features = false, features = [
     "default_fonts",
     "wgpu",
     "accesskit",
+    "x11",
+    "wayland",
 ] }
 egui = "0.28"
 
@@ -41,7 +47,7 @@ serde = { version = "1", features = ["derive"] }
 # Structured error handling
 anyhow = "1"
 
-# Native file picker (NSOpenPanel on macOS)
+# Native file picker (NSOpenPanel on macOS, XDG portal on Linux)
 rfd = "0.14"
 
 # ── macOS bundle metadata ──────────────────────────────────────────────────────
@@ -52,7 +58,7 @@ icon           = []
 version        = "0.1.2"
 copyright      = "Copyright 2024"
 category       = "developer-tool"
-short_description = "Compile Bitcoin Core and Electrs from source on macOS"
+short_description = "Compile Bitcoin Core and Electrs from source"
 
 # ── Release profile ────────────────────────────────────────────────────────────
 [profile.release]

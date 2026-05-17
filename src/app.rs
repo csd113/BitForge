@@ -10,7 +10,10 @@ use tokio::runtime::Runtime;
 
 use crate::compiler::{compile_bitcoin, compile_electrs};
 use crate::deps::check_dependencies_task;
-use crate::env_setup::{brew_prefix, find_brew, macos_version, setup_build_environment};
+use crate::env_setup::{
+    brew_prefix, default_build_dir, find_brew, is_supported_platform, platform_summary,
+    setup_build_environment, supported_platforms_message,
+};
 use crate::github::{fetch_bitcoin_versions, fetch_electrs_versions};
 use crate::messages::{log_msg, AppMessage, ConfirmRequest};
 
@@ -42,12 +45,6 @@ mod pal {
     pub const TERM_BG: Color32 = Color32::from_rgb(18, 18, 18);
     pub const TERM_TEXT: Color32 = Color32::from_rgb(0, 215, 0);
     pub const TERM_BORDER: Color32 = Color32::from_rgb(55, 55, 55);
-}
-
-// ─── Home directory ───────────────────────────────────────────────────────────
-
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
@@ -118,30 +115,21 @@ impl BitForgeApp {
         confirm_rx: Receiver<ConfirmRequest>,
         confirm_tx: Sender<ConfirmRequest>,
     ) -> Self {
-        let max_cores = std::thread::available_parallelism()
-            .map(std::num::NonZero::get)
-            .unwrap_or(1);
+        let max_cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
         let default_cores = max_cores.saturating_sub(1).max(1);
 
         let brew = find_brew();
         let brew_pfx = brew.as_deref().map(brew_prefix);
-        let macos = macos_version();
+        let platform = platform_summary();
+        let dependency_source = if cfg!(target_os = "macos") {
+            format!("Homebrew: {}", brew_pfx.as_deref().unwrap_or("not found"))
+        } else {
+            "Linux packages: system package manager".to_owned()
+        };
 
-        let status_bar = format!(
-            "macOS {}   ·   Homebrew: {}   ·   {} CPUs",
-            macos,
-            brew_pfx.as_deref().unwrap_or("not found"),
-            max_cores,
-        );
+        let status_bar = format!("{platform}   ·   {dependency_source}   ·   {max_cores} CPUs");
 
-        let default_build_dir = home_dir().map_or_else(
-            || "/tmp/bitcoin_builds".to_owned(),
-            |h| {
-                h.join("Downloads/bitcoin_builds")
-                    .to_string_lossy()
-                    .into_owned()
-            },
-        );
+        let default_build_dir = default_build_dir().to_string_lossy().into_owned();
 
         let mut app = Self {
             target: "Bitcoin".to_owned(),
@@ -175,15 +163,23 @@ impl BitForgeApp {
 
         // Splash — borrow ends before first append_log call
         let sep = "=".repeat(60);
-        let brew_str = app.brew_pfx.as_deref().unwrap_or("Not Found").to_owned();
+        let dependency_str = if cfg!(target_os = "macos") {
+            app.brew_pfx.as_deref().unwrap_or("Not Found").to_owned()
+        } else {
+            "system package manager".to_owned()
+        };
         let cpus = app.max_cores;
 
         app.append_log(&format!(
             "{sep}\nBitForge — Bitcoin Core & Electrs Compiler\n{sep}\n"
         ));
-        app.append_log(&format!("System: macOS {macos}\n"));
-        app.append_log(&format!("Homebrew: {brew_str}\n"));
+        app.append_log(&format!("System: {platform}\n"));
+        app.append_log(&format!("Dependencies: {dependency_str}\n"));
         app.append_log(&format!("CPU Cores: {cpus}\n"));
+        if !is_supported_platform() {
+            app.append_log(supported_platforms_message());
+            app.append_log("\n");
+        }
         app.append_log(&format!("{sep}\n\n"));
         app.append_log("👉 Click \"Check & Install Dependencies\" to begin.\n\n");
         app.append_log("📝 Bitcoin Core and Electrs are compiled from source via GitHub.\n\n");
@@ -290,20 +286,21 @@ impl BitForgeApp {
     // ─── Background task spawners ─────────────────────────────────────────────
 
     fn spawn_check_deps(&mut self) {
-        let Some(brew) = self.brew.clone() else {
+        if cfg!(target_os = "macos") && self.brew.is_none() {
             self.modal = Some(Modal::Alert {
                 title: "Homebrew Not Found".into(),
                 message:
-                    "Homebrew is required.\nInstall it from https://brew.sh then restart BitForge."
+                    "Homebrew is required on macOS Apple Silicon.\nInstall it from https://brew.sh then restart BitForge."
                         .into(),
                 is_error: true,
             });
             return;
-        };
+        }
 
         let env = setup_build_environment(self.brew_pfx.as_deref());
         let tx = self.msg_tx.clone();
         let confirm_tx = self.confirm_tx.clone();
+        let brew = self.brew.clone();
 
         self.is_busy = true;
         self.append_log("\n>>> Starting dependency check...\n");
@@ -617,7 +614,7 @@ impl BitForgeApp {
             );
             ui.add_space(2.0);
             ui.label(
-                egui::RichText::new("Bitcoin Core & Electrs Compiler for macOS")
+                egui::RichText::new("Bitcoin Core & Electrs Compiler")
                     .size(13.0)
                     .color(pal::LABEL_MUTED),
             );
@@ -629,7 +626,7 @@ impl BitForgeApp {
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(
-                        "Scans for required Homebrew packages and the Rust toolchain.",
+                        "Scans for required native packages and the Rust toolchain.",
                     )
                     .size(12.5)
                     .color(pal::LABEL_MUTED),

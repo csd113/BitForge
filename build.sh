@@ -2,9 +2,8 @@
 # build.sh — Compile BitForge and assemble a macOS .app bundle.
 #
 # Usage:
-#   ./build.sh                  # release build for the current arch
+#   ./build.sh                  # release build for macOS Apple Silicon
 #   ./build.sh --debug          # debug build (faster, larger binary)
-#   ./build.sh --universal      # fat binary: arm64 + x86_64
 #   ./build.sh --sign "Developer ID Application: You (TEAMID)"
 #
 # Output: ./dist/BitForge.app
@@ -12,7 +11,7 @@
 # Prerequisites:
 #   • Rust toolchain (rustup)
 #   • Xcode Command Line Tools  (xcode-select --install)
-#   • For --universal: both targets installed via rustup
+#   • aarch64-apple-darwin target installed via rustup
 
 set -euo pipefail
 
@@ -25,13 +24,11 @@ MINIMUM_MACOS="12.0"
 
 # ── Argument parsing ──────────────────────────────────────────────────────────
 BUILD_MODE="release"
-UNIVERSAL=false
 SIGN_IDENTITY=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --debug)     BUILD_MODE="debug" ;;
-        --universal) UNIVERSAL=true ;;
         --sign)      shift; SIGN_IDENTITY="$1" ;;
         *)           echo "Unknown argument: $1"; exit 1 ;;
     esac
@@ -40,11 +37,12 @@ done
 
 # ── Detect host architecture ──────────────────────────────────────────────────
 HOST_ARCH=$(uname -m)
-case "$HOST_ARCH" in
-    arm64)  RUST_TARGET="aarch64-apple-darwin" ;;
-    x86_64) RUST_TARGET="x86_64-apple-darwin" ;;
-    *)      echo "Unsupported architecture: $HOST_ARCH"; exit 1 ;;
-esac
+[[ "$HOST_ARCH" == "arm64" ]] || {
+    echo "Unsupported macOS architecture: $HOST_ARCH"
+    echo "BitForge macOS builds are Apple Silicon only."
+    exit 1
+}
+RUST_TARGET="aarch64-apple-darwin"
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 DIST_DIR="dist"
@@ -60,40 +58,21 @@ warn()    { printf '\033[1;33m⚠  \033[0m%s\n' "$*"; }
 err()     { printf '\033[1;31m✗ \033[0m%s\n' "$*" >&2; exit 1; }
 
 # ── Preflight checks ──────────────────────────────────────────────────────────
-info "BitForge ${VERSION} — build mode: ${BUILD_MODE}${UNIVERSAL:+ (universal)}"
+info "BitForge ${VERSION} — build mode: ${BUILD_MODE} (macOS Apple Silicon)"
 
 command -v cargo  >/dev/null 2>&1 || err "cargo not found — install Rust from https://rustup.rs"
 command -v codesign >/dev/null 2>&1 || err "codesign not found — install Xcode Command Line Tools"
 
-if $UNIVERSAL; then
-    rustup target list --installed | grep -q "aarch64-apple-darwin" \
-        || err "Missing target. Run: rustup target add aarch64-apple-darwin"
-    rustup target list --installed | grep -q "x86_64-apple-darwin" \
-        || err "Missing target. Run: rustup target add x86_64-apple-darwin"
-fi
+rustup target list --installed | grep -q "aarch64-apple-darwin" \
+    || err "Missing target. Run: rustup target add aarch64-apple-darwin"
 
 # ── Compile ───────────────────────────────────────────────────────────────────
 CARGO_FLAGS=()
 [[ "$BUILD_MODE" == "release" ]] && CARGO_FLAGS+=(--release)
 
-if $UNIVERSAL; then
-    info "Compiling for aarch64-apple-darwin..."
-    cargo build "${CARGO_FLAGS[@]}" --target aarch64-apple-darwin
-
-    info "Compiling for x86_64-apple-darwin..."
-    cargo build "${CARGO_FLAGS[@]}" --target x86_64-apple-darwin
-
-    ARM_BIN="target/aarch64-apple-darwin/${BUILD_MODE}/${BINARY_NAME}"
-    X86_BIN="target/x86_64-apple-darwin/${BUILD_MODE}/${BINARY_NAME}"
-    BUILT_BINARY="target/${BUILD_MODE}/${BINARY_NAME}_universal"
-
-    info "Fusing universal binary with lipo..."
-    lipo -create "$ARM_BIN" "$X86_BIN" -output "$BUILT_BINARY"
-else
-    info "Compiling for ${RUST_TARGET}..."
-    cargo build "${CARGO_FLAGS[@]}" --target "$RUST_TARGET"
-    BUILT_BINARY="target/${RUST_TARGET}/${BUILD_MODE}/${BINARY_NAME}"
-fi
+info "Compiling for ${RUST_TARGET}..."
+cargo build "${CARGO_FLAGS[@]}" --target "$RUST_TARGET"
+BUILT_BINARY="target/${RUST_TARGET}/${BUILD_MODE}/${BINARY_NAME}"
 
 [[ -f "$BUILT_BINARY" ]] || err "Build succeeded but binary not found at: $BUILT_BINARY"
 success "Binary built: $BUILT_BINARY ($(du -sh "$BUILT_BINARY" | cut -f1))"
@@ -205,7 +184,7 @@ echo ""
 echo "  App bundle : $APP_DIR"
 echo "  Version    : $VERSION"
 echo "  Size       : $BUNDLE_SIZE"
-echo "  Mode       : $BUILD_MODE${UNIVERSAL:+ (universal)}"
+echo "  Mode       : $BUILD_MODE (macOS Apple Silicon)"
 echo ""
 echo "  To run:"
 echo "    open $APP_DIR"
