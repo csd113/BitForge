@@ -5,21 +5,108 @@ on:
   pull_request:
 
 jobs:
-  macos:
-    name: macOS checks
+  macos-arm64:
+    name: macOS Apple Silicon checks
     runs-on: macos-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: aarch64-apple-darwin
 
       - name: Format
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Build release binary
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Package macOS app bundle
+        env:
+          BINARY_PATH: ${{ github.workspace }}/target/aarch64-apple-darwin/release/bitforge
+          OUTPUT_DIR: ${{ runner.temp }}/bitforge-ci
+        run: ./scripts/package_macos_app.sh
+
+      - name: Verify macOS app bundle
+        run: |
+          APP_DIR="${RUNNER_TEMP}/bitforge-ci/BitForge.app"
+          test -f "$APP_DIR/Contents/Info.plist"
+          test -x "$APP_DIR/Contents/MacOS/BitForge"
+          test -f "$APP_DIR/Contents/Resources/app-icon.icns"
+          plutil -lint "$APP_DIR/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP_DIR/Contents/Info.plist")" = "app-icon"
+          file "$APP_DIR/Contents/MacOS/BitForge" | grep -E "arm64|aarch64"
+
+  linux:
+    name: Linux ${{ matrix.arch }} checks
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            cmake \
+            git \
+            clang \
+            libclang-dev \
+            libevent-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libudev-dev \
+            libdbus-1-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: ${{ matrix.target }}
+
+      - name: Format
+        if: matrix.arch == 'x64'
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features --target ${{ matrix.target }} -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --all-features --target ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Verify Linux binary architecture
+        run: |
+          file "target/${{ matrix.target }}/release/bitforge"
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            file "target/${{ matrix.target }}/release/bitforge" | grep -E "ARM aarch64|ARM64|aarch64"
+          else
+            file "target/${{ matrix.target }}/release/bitforge" | grep -E "x86-64|x86_64"
+          fi

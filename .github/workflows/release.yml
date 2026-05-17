@@ -1,0 +1,172 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos-arm64:
+    name: macOS Apple Silicon
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Build release binary
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Verify binary architecture
+        run: |
+          file target/aarch64-apple-darwin/release/bitforge
+          file target/aarch64-apple-darwin/release/bitforge | grep -E "arm64|aarch64"
+
+      - name: Package macOS app bundle
+        env:
+          BINARY_PATH: ${{ github.workspace }}/target/aarch64-apple-darwin/release/bitforge
+          OUTPUT_DIR: ${{ runner.temp }}/bitforge-release
+          ZIP_NAME: BitForge-macos-arm64.zip
+        run: ./scripts/package_macos_app.sh
+
+      - name: Verify macOS artifact
+        run: |
+          test -f "${RUNNER_TEMP}/bitforge-release/BitForge-macos-arm64.zip"
+          unzip -l "${RUNNER_TEMP}/bitforge-release/BitForge-macos-arm64.zip" | grep "BitForge.app/Contents/MacOS/BitForge"
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: BitForge-macos-arm64
+          path: ${{ runner.temp }}/bitforge-release/BitForge-macos-arm64.zip
+          if-no-files-found: error
+
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ runner.temp }}/bitforge-release/BitForge-macos-arm64.zip
+
+  linux:
+    name: Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            arch: x64
+            archive: BitForge-linux-x64.tar.gz
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: arm64
+            archive: BitForge-linux-arm64.tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            cmake \
+            git \
+            clang \
+            libclang-dev \
+            libevent-dev \
+            libx11-dev \
+            libxcb1-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libudev-dev \
+            libdbus-1-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Verify binary architecture
+        run: |
+          file "target/${{ matrix.target }}/release/bitforge"
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            file "target/${{ matrix.target }}/release/bitforge" | grep -E "ARM aarch64|ARM64|aarch64"
+          else
+            file "target/${{ matrix.target }}/release/bitforge" | grep -E "x86-64|x86_64"
+          fi
+
+      - name: Package Linux archive
+        env:
+          BINARY_PATH: ${{ github.workspace }}/target/${{ matrix.target }}/release/bitforge
+          OUTPUT_DIR: ${{ runner.temp }}/bitforge-release
+          ARCHIVE_NAME: ${{ matrix.archive }}
+        run: ./scripts/package_linux.sh
+
+      - name: Verify Linux artifact
+        run: |
+          test -f "${RUNNER_TEMP}/bitforge-release/${{ matrix.archive }}"
+          tar -tzf "${RUNNER_TEMP}/bitforge-release/${{ matrix.archive }}" | grep "BitForge/bitforge"
+
+      - name: Upload CI artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: BitForge-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/bitforge-release/${{ matrix.archive }}
+          if-no-files-found: error
+
+      - name: Upload release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ runner.temp }}/bitforge-release/${{ matrix.archive }}
+
+  verify-release-scope:
+    name: Verify release scope
+    runs-on: ubuntu-latest
+    needs:
+      - macos-arm64
+      - linux
+
+    steps:
+      - name: Download uploaded artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Verify supported artifact names only
+        run: |
+          expected='BitForge-macos-arm64.zip BitForge-linux-x64.tar.gz BitForge-linux-arm64.tar.gz'
+          forbidden='BitForge-macos-x64.zip BitForge-macos-x86_64.app.zip BitForge-macos-x64.app.zip BitForge-windows.zip'
+          actual="$(find artifacts -maxdepth 3 -type f -print | sed 's#.*/##' | sort | tr '\n' ' ')"
+          printf 'Expected artifacts: %s\n' "$expected"
+          printf 'Actual artifacts: %s\n' "$actual"
+          for name in $expected; do
+            case " $actual " in
+              *" $name "*) ;;
+              *) echo "Missing expected artifact: $name"; exit 1 ;;
+            esac
+          done
+          for name in $forbidden; do
+            case " $actual " in
+              *" $name "*) echo "Forbidden artifact produced: $name"; exit 1 ;;
+            esac
+          done

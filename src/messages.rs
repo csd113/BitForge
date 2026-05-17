@@ -23,8 +23,14 @@ pub enum AppMessage {
     /// Populate the Bitcoin version combobox.
     BitcoinVersionsLoaded(Vec<String>),
 
+    /// Mark the Bitcoin version combobox as unavailable after a refresh error.
+    BitcoinVersionsFailed,
+
     /// Populate the Electrs version combobox.
     ElectrsVersionsLoaded(Vec<String>),
+
+    /// Mark the Electrs version combobox as unavailable after a refresh error.
+    ElectrsVersionsFailed,
 
     /// Show an informational / error overlay (no reply needed).
     ShowDialog {

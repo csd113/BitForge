@@ -10,7 +10,10 @@ use tokio::runtime::Runtime;
 
 use crate::compiler::{compile_bitcoin, compile_electrs};
 use crate::deps::check_dependencies_task;
-use crate::env_setup::{brew_prefix, find_brew, macos_version, setup_build_environment};
+use crate::env_setup::{
+    brew_prefix, default_build_dir, find_brew, is_supported_platform, platform_summary,
+    setup_build_environment, supported_platforms_message,
+};
 use crate::github::{fetch_bitcoin_versions, fetch_electrs_versions};
 use crate::messages::{log_msg, AppMessage, ConfirmRequest};
 
@@ -22,6 +25,10 @@ const TRIM_TO_LINES: usize = MAX_LOG_LINES / 2;
 const TERMINAL_HEIGHT: f32 = 260.0;
 /// Max width for the centred content column.
 const CONTENT_WIDTH: f32 = 860.0;
+/// Shared card corner radius.
+const CARD_RADIUS: u8 = 8;
+/// Shared horizontal spacing inside form-like rows.
+const ROW_GAP: f32 = 12.0;
 
 // ─── Colour palette (macOS light mode) ───────────────────────────────────────
 
@@ -30,24 +37,25 @@ mod pal {
     pub const ACCENT: Color32 = Color32::from_rgb(0, 122, 255); // macOS blue
     pub const ACCENT_TEXT: Color32 = Color32::WHITE;
     pub const SURFACE: Color32 = Color32::from_rgb(250, 250, 252); // card bg
+    pub const SURFACE_DARK: Color32 = Color32::from_rgb(31, 32, 36);
     pub const BORDER: Color32 = Color32::from_rgb(212, 212, 218);
+    pub const BORDER_DARK: Color32 = Color32::from_rgb(64, 66, 74);
     pub const LABEL_MUTED: Color32 = Color32::from_rgb(128, 128, 138);
+    pub const LABEL_MUTED_DARK: Color32 = Color32::from_rgb(170, 172, 182);
     pub const TEXT_PRIMARY: Color32 = Color32::from_rgb(20, 20, 25);
+    pub const TEXT_PRIMARY_DARK: Color32 = Color32::from_rgb(238, 239, 244);
     pub const SUCCESS: Color32 = Color32::from_rgb(52, 199, 89); // macOS green
+    pub const WARNING: Color32 = Color32::from_rgb(255, 149, 0); // macOS orange
     pub const DANGER: Color32 = Color32::from_rgb(255, 59, 48); // macOS red
     pub const PAGE_BG: Color32 = Color32::from_rgb(236, 236, 240); // window bg
+    pub const PAGE_BG_DARK: Color32 = Color32::from_rgb(22, 23, 27);
     pub const STATUS_BG: Color32 = Color32::from_rgb(242, 242, 246);
+    pub const STATUS_BG_DARK: Color32 = Color32::from_rgb(28, 29, 33);
 
     // Terminal stays dark
     pub const TERM_BG: Color32 = Color32::from_rgb(18, 18, 18);
     pub const TERM_TEXT: Color32 = Color32::from_rgb(0, 215, 0);
     pub const TERM_BORDER: Color32 = Color32::from_rgb(55, 55, 55);
-}
-
-// ─── Home directory ───────────────────────────────────────────────────────────
-
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
@@ -118,30 +126,21 @@ impl BitForgeApp {
         confirm_rx: Receiver<ConfirmRequest>,
         confirm_tx: Sender<ConfirmRequest>,
     ) -> Self {
-        let max_cores = std::thread::available_parallelism()
-            .map(std::num::NonZero::get)
-            .unwrap_or(1);
+        let max_cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
         let default_cores = max_cores.saturating_sub(1).max(1);
 
         let brew = find_brew();
         let brew_pfx = brew.as_deref().map(brew_prefix);
-        let macos = macos_version();
+        let platform = platform_summary();
+        let dependency_source = if cfg!(target_os = "macos") {
+            format!("Homebrew: {}", brew_pfx.as_deref().unwrap_or("not found"))
+        } else {
+            "Linux packages: system package manager".to_owned()
+        };
 
-        let status_bar = format!(
-            "macOS {}   ·   Homebrew: {}   ·   {} CPUs",
-            macos,
-            brew_pfx.as_deref().unwrap_or("not found"),
-            max_cores,
-        );
+        let status_bar = format!("{platform}   ·   {dependency_source}   ·   {max_cores} CPUs");
 
-        let default_build_dir = home_dir().map_or_else(
-            || "/tmp/bitcoin_builds".to_owned(),
-            |h| {
-                h.join("Downloads/bitcoin_builds")
-                    .to_string_lossy()
-                    .into_owned()
-            },
-        );
+        let default_build_dir = default_build_dir().to_string_lossy().into_owned();
 
         let mut app = Self {
             target: "Bitcoin".to_owned(),
@@ -175,18 +174,26 @@ impl BitForgeApp {
 
         // Splash — borrow ends before first append_log call
         let sep = "=".repeat(60);
-        let brew_str = app.brew_pfx.as_deref().unwrap_or("Not Found").to_owned();
+        let dependency_str = if cfg!(target_os = "macos") {
+            app.brew_pfx.as_deref().unwrap_or("Not Found").to_owned()
+        } else {
+            "system package manager".to_owned()
+        };
         let cpus = app.max_cores;
 
         app.append_log(&format!(
             "{sep}\nBitForge — Bitcoin Core & Electrs Compiler\n{sep}\n"
         ));
-        app.append_log(&format!("System: macOS {macos}\n"));
-        app.append_log(&format!("Homebrew: {brew_str}\n"));
+        app.append_log(&format!("System: {platform}\n"));
+        app.append_log(&format!("Dependencies: {dependency_str}\n"));
         app.append_log(&format!("CPU Cores: {cpus}\n"));
+        if !is_supported_platform() {
+            app.append_log(supported_platforms_message());
+            app.append_log("\n");
+        }
         app.append_log(&format!("{sep}\n\n"));
-        app.append_log("👉 Click \"Check & Install Dependencies\" to begin.\n\n");
-        app.append_log("📝 Bitcoin Core and Electrs are compiled from source via GitHub.\n\n");
+        app.append_log("Next step: click \"Check Dependencies\" before compiling.\n\n");
+        app.append_log("Bitcoin Core and Electrs are compiled from source via GitHub.\n\n");
 
         app.spawn_refresh_all_versions();
         app
@@ -252,11 +259,19 @@ impl BitForgeApp {
                     }
                     self.bitcoin_versions = versions;
                 }
+                AppMessage::BitcoinVersionsFailed => {
+                    self.bitcoin_versions.clear();
+                    "Unavailable".clone_into(&mut self.selected_bitcoin);
+                }
                 AppMessage::ElectrsVersionsLoaded(versions) => {
                     if let Some(first) = versions.first() {
                         self.selected_electrs = first.clone();
                     }
                     self.electrs_versions = versions;
+                }
+                AppMessage::ElectrsVersionsFailed => {
+                    self.electrs_versions.clear();
+                    "Unavailable".clone_into(&mut self.selected_electrs);
                 }
                 AppMessage::ShowDialog {
                     title,
@@ -290,20 +305,21 @@ impl BitForgeApp {
     // ─── Background task spawners ─────────────────────────────────────────────
 
     fn spawn_check_deps(&mut self) {
-        let Some(brew) = self.brew.clone() else {
+        if cfg!(target_os = "macos") && self.brew.is_none() {
             self.modal = Some(Modal::Alert {
                 title: "Homebrew Not Found".into(),
                 message:
-                    "Homebrew is required.\nInstall it from https://brew.sh then restart BitForge."
+                    "Homebrew is required on macOS Apple Silicon.\nInstall it from https://brew.sh then restart BitForge."
                         .into(),
                 is_error: true,
             });
             return;
-        };
+        }
 
         let env = setup_build_environment(self.brew_pfx.as_deref());
         let tx = self.msg_tx.clone();
         let confirm_tx = self.confirm_tx.clone();
+        let brew = self.brew.clone();
 
         self.is_busy = true;
         self.append_log("\n>>> Starting dependency check...\n");
@@ -324,7 +340,10 @@ impl BitForgeApp {
         });
     }
 
-    fn spawn_refresh_bitcoin_versions(&self) {
+    fn spawn_refresh_bitcoin_versions(&mut self) {
+        self.bitcoin_versions = vec!["Loading...".to_owned()];
+        "Loading...".clone_into(&mut self.selected_bitcoin);
+
         let tx = self.msg_tx.clone();
         self.runtime.spawn(async move {
             log_msg(&tx, "\n📡 Fetching Bitcoin versions from GitHub...\n");
@@ -338,6 +357,7 @@ impl BitForgeApp {
                 }
                 Err(e) => {
                     log_msg(&tx, &format!("⚠️  Could not fetch Bitcoin versions: {e}\n"));
+                    tx.send(AppMessage::BitcoinVersionsFailed).ok();
                     tx.send(AppMessage::ShowDialog {
                         title: "Network Error".into(),
                         message:
@@ -351,7 +371,10 @@ impl BitForgeApp {
         });
     }
 
-    fn spawn_refresh_electrs_versions(&self) {
+    fn spawn_refresh_electrs_versions(&mut self) {
+        self.electrs_versions = vec!["Loading...".to_owned()];
+        "Loading...".clone_into(&mut self.selected_electrs);
+
         let tx = self.msg_tx.clone();
         self.runtime.spawn(async move {
             log_msg(&tx, "\n📡 Fetching Electrs versions from GitHub...\n");
@@ -365,6 +388,7 @@ impl BitForgeApp {
                 }
                 Err(e) => {
                     log_msg(&tx, &format!("⚠️  Could not fetch Electrs versions: {e}\n"));
+                    tx.send(AppMessage::ElectrsVersionsFailed).ok();
                     tx.send(AppMessage::ShowDialog {
                         title: "Network Error".into(),
                         message:
@@ -378,7 +402,7 @@ impl BitForgeApp {
         });
     }
 
-    fn spawn_refresh_all_versions(&self) {
+    fn spawn_refresh_all_versions(&mut self) {
         self.spawn_refresh_bitcoin_versions();
         self.spawn_refresh_electrs_versions();
     }
@@ -390,7 +414,7 @@ impl BitForgeApp {
         let bitcoin_ver = self.selected_bitcoin.clone();
         let electrs_ver = self.selected_electrs.clone();
 
-        let loading = |s: &str| s.is_empty() || s == "Loading...";
+        let loading = |s: &str| s.is_empty() || !version_is_ready(s);
         if (target == "Bitcoin" || target == "Both") && loading(&bitcoin_ver) {
             self.modal = Some(Modal::Alert {
                 title: "Not Ready".into(),
@@ -514,16 +538,16 @@ impl BitForgeApp {
                     .max_width(480.0)
                     .show(ctx, |ui| {
                         ui.add_space(2.0);
-                        let (icon, color) = if err {
-                            ("⛔  Error", pal::DANGER)
+                        let (state_label, color) = if err {
+                            ("Error", pal::DANGER)
                         } else {
-                            ("✅  Success", pal::SUCCESS)
+                            ("Ready", pal::SUCCESS)
                         };
-                        ui.colored_label(color, egui::RichText::new(icon).strong().size(14.0));
+                        status_pill(ui, state_label, color);
                         ui.add_space(4.0);
                         ui.separator();
                         ui.add_space(6.0);
-                        ui.label(msg_str.as_str());
+                        ui.add(egui::Label::new(msg_str.as_str()).wrap());
                         ui.add_space(12.0);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
                             if ui.add(accent_button("OK")).clicked() {
@@ -553,7 +577,9 @@ impl BitForgeApp {
                     .max_width(500.0)
                     .show(ctx, |ui| {
                         ui.add_space(6.0);
-                        ui.label(msg_str.as_str());
+                        status_pill(ui, "Action Required", pal::WARNING);
+                        ui.add_space(8.0);
+                        ui.add(egui::Label::new(msg_str.as_str()).wrap());
                         ui.add_space(12.0);
                         ui.separator();
                         ui.add_space(6.0);
@@ -591,39 +617,67 @@ impl BitForgeApp {
 
     // ─── Content renderer (called inside centred column) ──────────────────────
 
-    #[allow(clippy::too_many_lines)]
     fn render_content(&mut self, ui: &mut egui::Ui) {
-        // Header
+        Self::render_header(ui);
+        ui.add_space(20.0);
+        self.render_dependency_section(ui);
+        ui.add_space(10.0);
+        self.render_build_settings_section(ui);
+        ui.add_space(10.0);
+        self.render_version_section(ui);
+        ui.add_space(10.0);
+        self.render_progress_section(ui);
+        ui.add_space(10.0);
+        self.render_log_section(ui);
+        ui.add_space(18.0);
+        self.render_compile_button(ui);
+    }
+
+    fn render_header(ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
             ui.label(
                 egui::RichText::new("⚙  BitForge")
                     .size(26.0)
                     .strong()
-                    .color(pal::TEXT_PRIMARY),
+                    .color(text_primary(ui)),
             );
             ui.add_space(2.0);
             ui.label(
-                egui::RichText::new("Bitcoin Core & Electrs Compiler for macOS")
+                egui::RichText::new("Bitcoin Core & Electrs Compiler")
                     .size(13.0)
-                    .color(pal::LABEL_MUTED),
+                    .color(label_muted(ui)),
             );
         });
+    }
 
-        ui.add_space(20.0);
-
-        // ── Step 1 ────────────────────────────────────────────────────────────
-        section_card(ui, "Step 1 — Check & Install Dependencies", |ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(
-                        "Scans for required Homebrew packages and the Rust toolchain.",
+    fn render_dependency_section(&mut self, ui: &mut egui::Ui) {
+        section_card(ui, "Step 1 — Check Dependencies", |ui| {
+            ui.horizontal_wrapped(|ui| {
+                let (label, color) = if self.is_busy {
+                    ("Running", pal::WARNING)
+                } else if !is_supported_platform() {
+                    ("Unsupported", pal::DANGER)
+                } else if cfg!(target_os = "macos") && self.brew.is_none() {
+                    ("Needs Homebrew", pal::DANGER)
+                } else {
+                    ("Ready to Check", pal::SUCCESS)
+                };
+                status_pill(ui, label, color);
+                ui.add_space(ROW_GAP);
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(
+                            "Verifies native packages and Rust before long builds start.",
+                        )
+                        .size(12.5)
+                        .color(label_muted(ui)),
                     )
-                    .size(12.5)
-                    .color(pal::LABEL_MUTED),
+                    .wrap(),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
-                        .add_enabled(!self.is_busy, accent_button("Check & Install"))
+                        .add_enabled(!self.is_busy, accent_button("Check Dependencies"))
+                        .on_disabled_hover_text("Wait for the current task to finish.")
                         .clicked()
                     {
                         self.spawn_check_deps();
@@ -631,18 +685,16 @@ impl BitForgeApp {
                 });
             });
         });
+    }
 
-        ui.add_space(10.0);
-
-        // ── Step 2 ────────────────────────────────────────────────────────────
+    fn render_build_settings_section(&mut self, ui: &mut egui::Ui) {
         section_card(ui, "Step 2 — Configure Build", |ui| {
             egui::Grid::new("settings_grid")
                 .num_columns(4)
-                .spacing([14.0, 10.0])
+                .spacing([ROW_GAP, 10.0])
                 .show(ui, |ui| {
-                    // Row 1: Target + Cores
-                    ui.label(egui::RichText::new("Target").color(pal::LABEL_MUTED));
-                    egui::ComboBox::from_id_source("target_combo")
+                    ui.label(egui::RichText::new("Target").color(label_muted(ui)));
+                    egui::ComboBox::from_id_salt("target_combo")
                         .selected_text(&self.target)
                         .width(140.0)
                         .show_ui(ui, |ui: &mut egui::Ui| {
@@ -651,7 +703,7 @@ impl BitForgeApp {
                             }
                         });
 
-                    ui.label(egui::RichText::new("CPU Cores").color(pal::LABEL_MUTED));
+                    ui.label(egui::RichText::new("CPU Cores").color(label_muted(ui)));
                     ui.horizontal(|ui| {
                         ui.add(
                             egui::DragValue::new(&mut self.cores)
@@ -661,19 +713,19 @@ impl BitForgeApp {
                         ui.label(
                             egui::RichText::new(format!("of {}", self.max_cores))
                                 .small()
-                                .color(pal::LABEL_MUTED),
+                                .color(label_muted(ui)),
                         );
                     });
                     ui.end_row();
 
-                    // Row 2: Build directory
-                    ui.label(egui::RichText::new("Output Dir").color(pal::LABEL_MUTED));
-                    ui.add(
+                    ui.label(egui::RichText::new("Output Folder").color(label_muted(ui)));
+                    let path_response = ui.add(
                         egui::TextEdit::singleline(&mut self.build_dir)
-                            .desired_width(440.0)
+                            .desired_width((ui.available_width() - 112.0).max(260.0))
                             .font(egui::TextStyle::Monospace),
                     );
-                    ui.label(""); // spacer
+                    path_response.on_hover_text(&self.build_dir);
+                    ui.label("");
                     if ui.button("Browse…").clicked() {
                         if let Some(folder) = rfd::FileDialog::new().pick_folder() {
                             self.build_dir = folder.to_string_lossy().into_owned();
@@ -682,17 +734,16 @@ impl BitForgeApp {
                     ui.end_row();
                 });
         });
+    }
 
-        ui.add_space(10.0);
-
-        // ── Step 3 ────────────────────────────────────────────────────────────
+    fn render_version_section(&mut self, ui: &mut egui::Ui) {
         section_card(ui, "Step 3 — Select Versions", |ui| {
             egui::Grid::new("versions_grid")
                 .num_columns(4)
-                .spacing([14.0, 10.0])
+                .spacing([ROW_GAP, 10.0])
                 .show(ui, |ui| {
-                    ui.label(egui::RichText::new("Bitcoin Core").color(pal::LABEL_MUTED));
-                    egui::ComboBox::from_id_source("bitcoin_combo")
+                    ui.label(egui::RichText::new("Bitcoin Core").color(label_muted(ui)));
+                    egui::ComboBox::from_id_salt("bitcoin_combo")
                         .selected_text(&self.selected_bitcoin)
                         .width(200.0)
                         .show_ui(ui, |ui: &mut egui::Ui| {
@@ -704,14 +755,14 @@ impl BitForgeApp {
                                 );
                             }
                         });
-                    if ui.button("↻  Refresh").clicked() {
+                    if ui.button("Refresh").clicked() {
                         self.spawn_refresh_bitcoin_versions();
                     }
-                    ui.label("");
+                    version_status(ui, &self.selected_bitcoin, self.bitcoin_versions.len());
                     ui.end_row();
 
-                    ui.label(egui::RichText::new("Electrs").color(pal::LABEL_MUTED));
-                    egui::ComboBox::from_id_source("electrs_combo")
+                    ui.label(egui::RichText::new("Electrs").color(label_muted(ui)));
+                    egui::ComboBox::from_id_salt("electrs_combo")
                         .selected_text(&self.selected_electrs)
                         .width(200.0)
                         .show_ui(ui, |ui: &mut egui::Ui| {
@@ -723,91 +774,104 @@ impl BitForgeApp {
                                 );
                             }
                         });
-                    if ui.button("↻  Refresh").clicked() {
+                    if ui.button("Refresh").clicked() {
                         self.spawn_refresh_electrs_versions();
                     }
-                    ui.label("");
+                    version_status(ui, &self.selected_electrs, self.electrs_versions.len());
                     ui.end_row();
                 });
         });
+    }
 
-        ui.add_space(10.0);
-
-        // ── Progress ──────────────────────────────────────────────────────────
+    fn render_progress_section(&self, ui: &mut egui::Ui) {
         section_card(ui, "Build Progress", |ui| {
-            let label = if self.is_busy {
-                format!("{:.0}%", self.progress * 100.0)
+            let (label, color) = if self.is_busy {
+                (
+                    format!("Working · {:.0}%", self.progress * 100.0),
+                    pal::WARNING,
+                )
             } else if self.progress >= 1.0 {
-                "Complete".to_owned()
+                ("Complete".to_owned(), pal::SUCCESS)
             } else {
-                "Idle".to_owned()
+                ("Idle".to_owned(), label_muted(ui))
             };
 
             ui.horizontal(|ui| {
                 ui.add(
                     egui::ProgressBar::new(self.progress)
-                        .desired_width(ui.available_width() - 56.0)
+                        .desired_width((ui.available_width() - 116.0).max(180.0))
                         .animate(self.is_busy)
                         .text(""),
                 );
                 ui.add_space(6.0);
-                ui.label(egui::RichText::new(label).small().color(pal::LABEL_MUTED));
+                ui.label(egui::RichText::new(label).small().strong().color(color));
             });
         });
+    }
 
-        ui.add_space(10.0);
-
-        // ── Build log terminal — FIXED HEIGHT, never resizes ──────────────────
-        ui.label(
-            egui::RichText::new("Build Log")
-                .strong()
-                .color(pal::TEXT_PRIMARY),
-        );
+    fn render_log_section(&self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new("Build Log")
+                    .strong()
+                    .color(text_primary(ui)),
+            );
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new(format!("{} lines retained", self.log_line_count))
+                    .small()
+                    .color(label_muted(ui)),
+            );
+        });
         ui.add_space(4.0);
 
         egui::Frame {
             fill: pal::TERM_BG,
             stroke: egui::Stroke::new(1.0, pal::TERM_BORDER),
-            inner_margin: egui::Margin::same(10.0),
-            rounding: egui::Rounding::same(8.0),
+            inner_margin: egui::Margin::same(10),
+            corner_radius: egui::CornerRadius::same(CARD_RADIUS),
             outer_margin: egui::Margin::ZERO,
             ..Default::default()
         }
         .show(ui, |ui| {
-            // Hard-pin both min and max to the same value so egui never
-            // allocates more or less space as log content grows.
             ui.set_min_height(TERMINAL_HEIGHT);
             ui.set_max_height(TERMINAL_HEIGHT);
 
-            egui::ScrollArea::vertical()
-                .id_source("build_log")
+            egui::ScrollArea::both()
+                .id_salt("build_log")
                 .stick_to_bottom(true)
                 .max_height(TERMINAL_HEIGHT)
                 .min_scrolled_height(TERMINAL_HEIGHT)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.label(
-                        egui::RichText::new(&self.log_buffer)
-                            .color(pal::TERM_TEXT)
-                            .monospace()
-                            .size(11.5),
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(&self.log_buffer)
+                                .color(pal::TERM_TEXT)
+                                .monospace()
+                                .size(11.5),
+                        )
+                        .selectable(false),
                     );
                 });
         });
+    }
 
-        ui.add_space(18.0);
-
-        // ── Compile button ────────────────────────────────────────────────────
+    fn render_compile_button(&mut self, ui: &mut egui::Ui) {
         ui.vertical_centered(|ui| {
             let label = if self.is_busy {
-                "⏳  Compiling…"
+                "Compiling…"
             } else {
-                "🚀  Start Compilation"
+                "Start Compilation"
             };
+            let needs_bitcoin = self.target == "Bitcoin" || self.target == "Both";
+            let needs_electrs = self.target == "Electrs" || self.target == "Both";
+            let versions_ready = (!needs_bitcoin || version_is_ready(&self.selected_bitcoin))
+                && (!needs_electrs || version_is_ready(&self.selected_electrs));
+            let can_compile = !self.is_busy && versions_ready && !self.build_dir.trim().is_empty();
             if ui
                 .add_enabled(
-                    !self.is_busy,
+                    can_compile,
                     egui::Button::new(
                         egui::RichText::new(label)
                             .size(15.0)
@@ -818,15 +882,112 @@ impl BitForgeApp {
                     .stroke(egui::Stroke::NONE)
                     .min_size(egui::vec2(220.0, 40.0)),
                 )
+                .on_disabled_hover_text(if self.is_busy {
+                    "Wait for the current task to finish."
+                } else if !versions_ready {
+                    "Wait for version lists to load, or use Refresh."
+                } else {
+                    "Choose an output folder before compiling."
+                })
                 .clicked()
             {
                 self.spawn_compile();
             }
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new("Outputs are copied into a versioned binaries folder.")
+                    .small()
+                    .color(label_muted(ui)),
+            );
         });
     }
 }
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────
+
+fn text_primary(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode {
+        pal::TEXT_PRIMARY_DARK
+    } else {
+        pal::TEXT_PRIMARY
+    }
+}
+
+fn label_muted(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode {
+        pal::LABEL_MUTED_DARK
+    } else {
+        pal::LABEL_MUTED
+    }
+}
+
+fn surface(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode {
+        pal::SURFACE_DARK
+    } else {
+        pal::SURFACE
+    }
+}
+
+fn border(ui: &egui::Ui) -> egui::Color32 {
+    if ui.visuals().dark_mode {
+        pal::BORDER_DARK
+    } else {
+        pal::BORDER
+    }
+}
+
+fn page_bg(ctx: &egui::Context) -> egui::Color32 {
+    if ctx.global_style().visuals.dark_mode {
+        pal::PAGE_BG_DARK
+    } else {
+        pal::PAGE_BG
+    }
+}
+
+fn status_bg(ctx: &egui::Context) -> egui::Color32 {
+    if ctx.global_style().visuals.dark_mode {
+        pal::STATUS_BG_DARK
+    } else {
+        pal::STATUS_BG
+    }
+}
+
+fn status_pill(ui: &mut egui::Ui, label: &str, color: egui::Color32) {
+    egui::Frame {
+        fill: color.gamma_multiply(if ui.visuals().dark_mode { 0.22 } else { 0.14 }),
+        stroke: egui::Stroke::new(1.0, color.gamma_multiply(0.78)),
+        corner_radius: egui::CornerRadius::same(u8::MAX),
+        inner_margin: egui::Margin::symmetric(9, 3),
+        ..Default::default()
+    }
+    .show(ui, |ui| {
+        ui.label(
+            egui::RichText::new(label)
+                .small()
+                .strong()
+                .color(if ui.visuals().dark_mode {
+                    egui::Color32::WHITE
+                } else {
+                    color
+                }),
+        );
+    });
+}
+
+fn version_status(ui: &mut egui::Ui, selected: &str, count: usize) {
+    if selected == "Loading..." {
+        status_pill(ui, "Loading", pal::WARNING);
+    } else if selected == "Unavailable" || count == 0 {
+        status_pill(ui, "Unavailable", pal::DANGER);
+    } else {
+        status_pill(ui, "Ready", pal::SUCCESS);
+    }
+}
+
+fn version_is_ready(selected: &str) -> bool {
+    !matches!(selected, "" | "Loading..." | "Unavailable")
+}
 
 /// macOS-style filled accent button.
 fn accent_button(label: &str) -> egui::Button<'_> {
@@ -844,10 +1005,10 @@ fn accent_button(label: &str) -> egui::Button<'_> {
 /// Render a titled card section.
 fn section_card(ui: &mut egui::Ui, heading: &str, body: impl FnOnce(&mut egui::Ui)) {
     egui::Frame {
-        fill: pal::SURFACE,
-        stroke: egui::Stroke::new(1.0, pal::BORDER),
-        rounding: egui::Rounding::same(10.0),
-        inner_margin: egui::Margin::symmetric(16.0, 12.0),
+        fill: surface(ui),
+        stroke: egui::Stroke::new(1.0, border(ui)),
+        corner_radius: egui::CornerRadius::same(CARD_RADIUS),
+        inner_margin: egui::Margin::symmetric(16, 12),
         outer_margin: egui::Margin::ZERO,
         ..Default::default()
     }
@@ -857,7 +1018,7 @@ fn section_card(ui: &mut egui::Ui, heading: &str, body: impl FnOnce(&mut egui::U
             egui::RichText::new(heading)
                 .strong()
                 .size(13.0)
-                .color(pal::TEXT_PRIMARY),
+                .color(text_primary(ui)),
         );
         ui.add_space(8.0);
         body(ui);
@@ -867,34 +1028,58 @@ fn section_card(ui: &mut egui::Ui, heading: &str, body: impl FnOnce(&mut egui::U
 // ─── eframe::App ──────────────────────────────────────────────────────────────
 
 impl eframe::App for BitForgeApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+
         self.drain_messages();
-        self.render_modal(ctx);
+        self.render_modal(&ctx);
 
         // ── Status bar ────────────────────────────────────────────────────────
-        egui::TopBottomPanel::bottom("status_bar")
+        egui::Panel::bottom("status_bar")
             .frame(egui::Frame {
-                fill: pal::STATUS_BG,
-                stroke: egui::Stroke::new(1.0, pal::BORDER),
-                inner_margin: egui::Margin::symmetric(16.0, 5.0),
+                fill: status_bg(&ctx),
+                stroke: egui::Stroke::new(
+                    1.0,
+                    if ctx.global_style().visuals.dark_mode {
+                        pal::BORDER_DARK
+                    } else {
+                        pal::BORDER
+                    },
+                ),
+                inner_margin: egui::Margin::symmetric(16, 5),
                 ..Default::default()
             })
-            .show(ctx, |ui| {
-                ui.label(
-                    egui::RichText::new(&self.status_bar)
-                        .small()
-                        .color(pal::LABEL_MUTED),
-                );
+            .show_inside(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    status_pill(
+                        ui,
+                        if self.is_busy { "Working" } else { "Ready" },
+                        if self.is_busy {
+                            pal::WARNING
+                        } else {
+                            pal::SUCCESS
+                        },
+                    );
+                    ui.add_space(8.0);
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(&self.status_bar)
+                                .small()
+                                .color(label_muted(ui)),
+                        )
+                        .wrap(),
+                    );
+                });
             });
 
         // ── Main window ───────────────────────────────────────────────────────
         egui::CentralPanel::default()
             .frame(egui::Frame {
-                fill: pal::PAGE_BG,
+                fill: page_bg(&ctx),
                 inner_margin: egui::Margin::ZERO,
                 ..Default::default()
             })
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false; 2])
                     .show(ui, |ui| {

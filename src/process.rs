@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Context as _, Result};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 

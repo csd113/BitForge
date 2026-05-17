@@ -4,8 +4,8 @@
 // compile_electrs  — clone, cargo build --release, copy binary.
 //
 // Bitcoin Core v29+ uses CMake exclusively (autotools removed upstream).
-// The critical env requirement: PKG_CONFIG_PATH must point at Homebrew's
-// pkgconfig directories so cmake can find libevent, sqlite, etc. via
+// The critical env requirement: PKG_CONFIG_PATH must point at native package
+// manager pkgconfig directories so cmake can find libevent, sqlite, etc. via
 // pkg-config. Without this, cmake falls back to exhaustive try_compile
 // probes for every dependency, stalling with zero output for 10+ minutes.
 
@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 
-use anyhow::{Context, Result};
+use anyhow::{Context as _, Result};
 
 use crate::messages::{log_msg, AppMessage};
 use crate::process::{probe, run_command};
@@ -45,7 +45,7 @@ pub async fn compile_bitcoin(
 
     // Build a bitcoin-specific environment. The two critical additions
     // over the base env are:
-    //   PKG_CONFIG_PATH — lets cmake find Homebrew packages via pkg-config
+    //   PKG_CONFIG_PATH — lets cmake find native packages via pkg-config
     //                     instantly, rather than doing exhaustive try_compile
     //                     probes that stall the build for 10+ minutes.
     //   TERM unset      — cmake streams configure output in real time only
@@ -105,9 +105,9 @@ pub async fn compile_bitcoin(
     .context(
         "cmake configure failed.\n\
          Common causes:\n\
-         - libevent not installed: brew install libevent\n\
-         - cmake not installed:    brew install cmake\n\
-         - Xcode CLI tools missing: xcode-select --install",
+         - libevent development package not installed\n\
+         - cmake not installed\n\
+         - C/C++ compiler toolchain not installed",
     )?;
 
     // ── Step 3: cmake build ───────────────────────────────────────────────────
@@ -270,27 +270,33 @@ pub async fn compile_electrs(
 /// Environment for Bitcoin Core cmake builds.
 ///
 /// Critical differences from `cargo_env`:
-/// - `PKG_CONFIG_PATH` set → cmake finds Homebrew deps via pkg-config instantly.
+/// - `PKG_CONFIG_PATH` set → cmake finds native deps via pkg-config instantly.
 /// - TERM NOT set to "dumb" → cmake streams output in real time, not batched.
 fn bitcoin_env(base: &HashMap<String, String>) -> HashMap<String, String> {
     let mut env = base.clone();
 
     // ── PKG_CONFIG_PATH ──────────────────────────────────────────────────────
-    // Bitcoin Core cmake finds libevent and other Homebrew deps via pkg-config.
+    // Bitcoin Core cmake finds libevent and other native deps via pkg-config.
     // Without these paths cmake runs silent try_compile probes for every lib,
     // stalling the configure step for 10+ minutes with no visible output.
-    let homebrew_dirs = [
+    let pkg_config_dirs = [
         "/opt/homebrew/lib/pkgconfig",
         "/opt/homebrew/share/pkgconfig",
         "/usr/local/lib/pkgconfig",
         "/usr/local/share/pkgconfig",
+        "/usr/lib/pkgconfig",
+        "/usr/share/pkgconfig",
+        "/usr/lib64/pkgconfig",
+        "/usr/lib/x86_64-linux-gnu/pkgconfig",
+        "/usr/lib/aarch64-linux-gnu/pkgconfig",
     ];
 
-    let mut pcp: Vec<String> = homebrew_dirs.iter().map(ToString::to_string).collect();
+    let mut pcp: Vec<String> = pkg_config_dirs.iter().map(ToString::to_string).collect();
     if let Some(existing) = env.get("PKG_CONFIG_PATH") {
         for part in existing.split(':').filter(|p| !p.is_empty()) {
-            if !pcp.contains(&part.to_string()) {
-                pcp.push(part.to_string());
+            let part = part.to_owned();
+            if !pcp.contains(&part) {
+                pcp.push(part);
             }
         }
     }
@@ -335,7 +341,7 @@ async fn collect_executables(dir: &Path) -> Vec<PathBuf> {
             // On Unix, check the executable bit.
             #[cfg(unix)]
             {
-                use std::os::unix::fs::PermissionsExt;
+                use std::os::unix::fs::PermissionsExt as _;
                 if let Ok(meta) = std::fs::metadata(&path) {
                     if meta.permissions().mode() & 0o111 != 0 {
                         result.push(path);
@@ -384,7 +390,7 @@ async fn copy_binaries(
             Ok(_) => {
                 #[cfg(unix)]
                 {
-                    use std::os::unix::fs::PermissionsExt;
+                    use std::os::unix::fs::PermissionsExt as _;
                     tokio::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
                         .await
                         .with_context(|| {
