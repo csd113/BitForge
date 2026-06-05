@@ -1,5 +1,12 @@
 # Changelog
 
+## Repository freeze - 2026-06-04
+
+### Changed
+
+- Marked the repository as frozen for standalone development and directed future binary-management and build work to BitEngine.
+- Added a prominent README notice stating that BitForge remains available for historical and reference purposes.
+
 ## v0.1.2 - 2026-05-15
 
 ### Added

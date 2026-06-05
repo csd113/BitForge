@@ -1,3 +1,5 @@
+> **BitForge is frozen and no longer under active standalone development. Its binary-management and build functionality has been integrated into [BitEngine](https://github.com/csd113/BitEngine), and future development, bug fixes, and feature requests should be directed there. This repository remains available for historical and reference purposes.**
+
 <div align="center">
 
 # ⚙️ BitForge
@@ -7,17 +9,17 @@
 Built with Rust · egui · wgpu · Apple Silicon and Linux native
 
 [![Rust](https://img.shields.io/badge/rust-1.92%2B-orange?logo=rust)](https://www.rust-lang.org/)
-[![Platform](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon%20%7C%20Linux-blue)](#supported-platforms)
-[![Architecture](https://img.shields.io/badge/arch-arm64%20%7C%20x86__64-lightgrey)](#supported-platforms)
+[![Platform](https://img.shields.io/badge/platform-macOS%20Apple%20Silicon%20%7C%20Linux-blue)](#historical-build-targets)
+[![Architecture](https://img.shields.io/badge/arch-arm64%20%7C%20x86__64-lightgrey)](#historical-build-targets)
 [![License](https://img.shields.io/badge/license-MIT-green)](#license)
 
 </div>
 
 ---
 
-## What is BitForge?
+## Historical overview
 
-BitForge is a native desktop application that compiles **Bitcoin Core** (`bitcoind`) and the **Electrs** block indexer directly from source.
+BitForge was a native desktop application that compiled **Bitcoin Core** (`bitcoind`) and the **Electrs** block indexer directly from source.
 
 - Dependency checker for macOS Homebrew and Linux native packages
 - Version selector pulling live tags from the GitHub Releases API
@@ -26,7 +28,7 @@ BitForge is a native desktop application that compiles **Bitcoin Core** (`bitcoi
 - Configurable build directory and CPU core count
 - Single-binary distribution — no runtime, no WebView, no Electron
 
-Binaries produced by BitForge drop straight into **BitEngine** for node management.
+The binary-management and build workflow described here now lives in **BitEngine**.
 
 ---
 
@@ -77,7 +79,7 @@ Binaries produced by BitForge drop straight into **BitEngine** for node manageme
 ### Dependency checker
 Scans for required native build packages and the Rust toolchain before long source builds start. On macOS Apple Silicon, BitForge verifies required Homebrew packages and can install missing packages after confirmation. On Linux, BitForge checks compiler/linker tools, `pkg-config`, `libevent`, `libclang`, X11/Wayland, `libudev`, and D-Bus development files, then reports distro-specific install guidance for Debian/Ubuntu, Fedora, and Arch.
 
-## Supported platforms
+## Historical build targets
 
 | Platform | Rust target | Release artifact |
 |---|---|---|
@@ -85,9 +87,9 @@ Scans for required native build packages and the Rust toolchain before long sour
 | Linux x86_64 | `x86_64-unknown-linux-gnu` | `BitForge-linux-x64.tar.gz` |
 | Linux ARM64 / aarch64 | `aarch64-unknown-linux-gnu` | `BitForge-linux-arm64.tar.gz` |
 
-BitForge does not produce Windows artifacts, macOS Intel artifacts, or universal macOS apps.
+BitForge did not produce Windows artifacts, macOS Intel artifacts, or universal macOS apps.
 
-### Live version selection
+### Version selection
 Pulls the latest stable release tags directly from the GitHub Releases API on startup. Pre-releases and release candidates (`rc`) are filtered out automatically. Hit **Refresh** at any time to re-fetch.
 
 ### Build targets
@@ -125,7 +127,9 @@ All long-running child processes are spawned with `kill_on_drop(true)` — if th
 
 ---
 
-## Build
+## Historical build instructions
+
+The instructions below are preserved for reference only. New development and feature requests belong in BitEngine.
 
 ### Prerequisites
 
@@ -170,7 +174,7 @@ sudo pacman -S --needed base-devel pkgconf cmake git clang libevent libx11 \
 
 Linux desktop sessions also need working graphics drivers with Vulkan, OpenGL, or GLES support for `wgpu`.
 
-### Development build
+### Local build
 
 ```bash
 cargo build
@@ -314,7 +318,7 @@ The egui render loop never blocks. All process I/O runs on the tokio runtime. Co
 
 ## Related projects
 
-- [BitEngine](https://github.com/csd113/BitEngine) — launch, monitor, and shut down the nodes that BitForge builds
+- [BitEngine](https://github.com/csd113/BitEngine) — successor repository containing the integrated binary-management and build workflow
 - [Bitcoin Core](https://github.com/bitcoin/bitcoin)
 - [Electrs](https://github.com/romanz/electrs)
 
